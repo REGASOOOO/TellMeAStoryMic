@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { VRButton } from "three/examples/jsm/webxr/VRButton.js";
+import FallingPillars from "./components/FallingPillars";
 
 export default function Home() {
   const mountRef = useRef<HTMLDivElement>(null);
@@ -12,12 +13,31 @@ export default function Home() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   // Paramètres pour le segment de vidéo à répéter (en secondes)
   const [startTime, setStartTime] = useState(215); // Début du segment
-  const [endTime, setEndTime] = useState(420); // Fin du segment (30 secondes par défaut)
+  const [endTime, setEndTime] = useState(420); // Fin du segment
+  // État pour la scène Three.js
+  const [scene, setScene] = useState<THREE.Scene | null>(null);
+  // État pour déclencher la chute des piédestaux
+  const [triggerFall, setTriggerFall] = useState(false);
+  // Compteur pour les piédestaux tombés
+  const [fallenPedestalCount, setFallenPedestalCount] = useState(0);
+
+  // Fonction pour déclencher la chute d'un piédestal
+  const handleTriggerFall = () => {
+    // Utiliser un nouvel objet pour s'assurer que React détecte le changement
+    setTriggerFall(!triggerFall);
+    setFallenPedestalCount((prev) => {
+      // Ne pas dépasser 2 (nombre total de piédestaux)
+      return prev < 2 ? prev + 1 : prev;
+    });
+  };
 
   useEffect(() => {
     if (!mountRef.current) return;
 
     const scene = new THREE.Scene();
+    // Stocker la scène dans l'état pour la passer au composant FallingPillars
+    setScene(scene);
+
     const camera = new THREE.PerspectiveCamera(
       75,
       window.innerWidth / window.innerHeight,
@@ -28,6 +48,9 @@ export default function Home() {
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
+
+    // Stocker le renderer dans les userData de la scène
+    scene.userData.renderer = renderer;
 
     // Enable XR functionality
     renderer.xr.enabled = true;
@@ -137,81 +160,11 @@ export default function Home() {
     const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
     scene.add(sphere);
 
-    // Ajout de la physique avec Cannon.js
-    const pillars: THREE.Mesh[] = [];
-
-    const pillarGeometry = new THREE.CylinderGeometry(0.5, 0.6, 4, 32);
-    const pillarMaterial = new THREE.MeshStandardMaterial({ 
-        roughness: 0.5,
-        metalness: 0.1,
-        bumpScale: 0.02
-    });
-
-    const fallDelay = 1000;
-    let lastFallTime = Date.now() + 2000;
-    let currentPillarIndex = 0;
-
-    function createInitialPillars() {
-      const numberOfPillars = 2;
-      const radius = 15; // Distance par rapport au centre
-      const arcAngle = Math.PI / 2; // 90 degrés (quart de cercle)
-      
-      for (let i = 0; i < numberOfPillars; i++) {
-          const angle = -Math.PI/4 + (i * arcAngle) / (numberOfPillars - 1);
-          
-          // Calculer la position sur l'arc de cercle
-          const x = radius * Math.cos(angle);
-          const z = radius * Math.sin(angle);
-          
-          const pillar = new THREE.Mesh(pillarGeometry, pillarMaterial);
-          
-          const pillarGroup = new THREE.Group();
-          pillarGroup.add(pillar);
-          
-          // Positionner le groupe sur l'arc de cercle
-          pillarGroup.position.set(x, 20, z);
-          pillarGroup.userData.shouldFall = false; // Flag pour contrôler la chute
-          
-          // Orienter le pilier vers la caméra
-          pillarGroup.lookAt(0, 20, -15);
-          
-          scene.add(pillarGroup);
-          pillars.push(pillarGroup);
-      }
-    }
-
-    createInitialPillars();
-
-    // Ajouter une lumière pour voir les piliers
+    // Ajouter une lumière pour voir les modèles 3D
     const light = new THREE.DirectionalLight(0xffffff, 1);
     light.position.set(0, 10, 0);
     scene.add(light);
     scene.add(new THREE.AmbientLight(0x404040));
-
-    // Animation des piliers
-    function animatePillars() {
-      const currentTime = Date.now();
-      
-      // Vérifier si c'est le moment de faire tomber un nouveau pilier
-      if (currentPillarIndex < pillars.length && 
-          currentTime - lastFallTime > fallDelay) {
-          pillars[currentPillarIndex].userData.shouldFall = true;
-          lastFallTime = currentTime;
-          currentPillarIndex++;
-      }
-      
-      // Animer les piliers qui doivent tomber
-      pillars.forEach((pillarGroup) => {
-          if (pillarGroup.userData.shouldFall && pillarGroup.position.y > 0) {
-              pillarGroup.position.y -= 1; // Vitesse de chute
-              
-              // Arrêter au niveau du sol
-              if (pillarGroup.position.y < 0) {
-                  pillarGroup.position.y = 0;
-              }
-          }
-      });
-    }
 
     // Timer to update video time
     let videoTimeInterval: number;
@@ -262,7 +215,10 @@ export default function Home() {
         controls.update();
       }
 
-      animatePillars(); // Ajouter l'animation des piliers
+      // Exécuter toutes les fonctions d'animation enregistrées
+      if (scene.userData.animationFunctions) {
+        scene.userData.animationFunctions.forEach((fn: Function) => fn());
+      }
 
       // Ensure video texture updates
       if (video.readyState >= video.HAVE_CURRENT_DATA) {
@@ -305,8 +261,6 @@ export default function Home() {
       if (vrButton) {
         vrButton.remove();
       }
-
-      pillars.forEach(pillar => scene.remove(pillar));
     };
   }, [startTime, endTime]);
 
@@ -323,6 +277,10 @@ export default function Home() {
   return (
     <div style={{ position: "relative", width: "100%", height: "100vh" }}>
       <div ref={mountRef} style={{ width: "100%", height: "100%" }}></div>
+
+      {/* Utilisation du composant FallingPillars avec triggerFall */}
+      {scene && <FallingPillars scene={scene} camera={scene.userData.camera} />}
+
       <div
         style={{
           position: "absolute",

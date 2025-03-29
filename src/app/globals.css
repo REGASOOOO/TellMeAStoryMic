@@ -24,3 +24,73 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+.vr-container {
+  position: relative;
+  width: 100%;
+  height: 100vh;
+}
+
+.vr-scene {
+  width: 100%;
+  height: 100%;
+}
+
+.video-timer {
+  position: absolute;
+  bottom: 20px;
+  left: 20px;
+  background: rgba(0, 0, 0, 0.5);
+  color: white;
+  padding: 5px 10px;
+  border-radius: 5px;
+  font-size: 16px;
+  z-index: 100;
+}
+
+.video-controls {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  background: rgba(0, 0, 0, 0.5);
+  color: white;
+  padding: 10px;
+  border-radius: 5px;
+  z-index: 100;
+}
+
+.time-input {
+  width: 60px;
+  margin-right: 10px;
+}
+
+.scene-selector {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  background: rgba(0, 0, 0, 0.5);
+  color: white;
+  padding: 10px;
+  border-radius: 5px;
+  z-index: 100;
+}
+
+.scene-button {
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  border: none;
+  padding: 5px 10px;
+  margin: 0 5px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: background 0.3s;
+}
+
+.scene-button:hover {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.scene-button.active {
+  background: rgba(255, 255, 255, 0.6);
+  font-weight: bold;
+}

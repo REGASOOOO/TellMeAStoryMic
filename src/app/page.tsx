@@ -7,7 +7,12 @@ import { VRButton } from "three/examples/jsm/webxr/VRButton.js";
 
 export default function Home() {
   const mountRef = useRef<HTMLDivElement>(null);
-  const [videoTime, setVideoTime] = useState("3:34");
+  const [videoTime, setVideoTime] = useState("0:00");
+  // Référence pour le contrôle de la vidéo
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  // Paramètres pour le segment de vidéo à répéter (en secondes)
+  const [startTime, setStartTime] = useState(215); // Début du segment
+  const [endTime, setEndTime] = useState(420); // Fin du segment (30 secondes par défaut)
 
   useEffect(() => {
     if (!mountRef.current) return;
@@ -41,8 +46,34 @@ export default function Home() {
     controls.minDistance = 1; // Minimum zoom distance
     controls.maxDistance = 40; // Don't zoom out beyond the sphere
 
+    // Remplacer le sol vert par un sol semi-transparent
+    const groundGeometry = new THREE.CircleGeometry(20, 32);
+    const groundMaterial = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.3,
+      side: THREE.DoubleSide,
+    });
+    const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+    ground.rotation.x = Math.PI / 2; // Rotation horizontale
+    ground.position.y = -5; // Position légèrement plus haute pour une meilleure visibilité
+    scene.add(ground);
+
+    // Ajouter un disque plus petit pour marquer le centre
+    const centerGeometry = new THREE.CircleGeometry(1, 32);
+    const centerMaterial = new THREE.MeshBasicMaterial({
+      color: 0x3366ff,
+      transparent: true,
+      opacity: 0.5,
+      side: THREE.DoubleSide,
+    });
+    const centerMark = new THREE.Mesh(centerGeometry, centerMaterial);
+    centerMark.rotation.x = Math.PI / 2;
+    centerMark.position.y = -4.9; // Légèrement au-dessus du sol
+    scene.add(centerMark);
+
     // Position camera for better VR experience - slightly elevated
-    camera.position.set(0, 1.6, 5); // 1.6 is approximate standing eye level
+    camera.position.set(0, 1.6, 0); // Position centrale pour VR
 
     // Create a primitive object to represent controller position
     const controllerModelFactory = new THREE.Mesh(
@@ -50,17 +81,42 @@ export default function Home() {
       new THREE.MeshBasicMaterial({ color: 0xff0000 })
     );
 
-    // Add more objects for spatial reference in VR
-    const gridHelper = new THREE.GridHelper(10, 10);
-    scene.add(gridHelper);
+    // Remplacer la grille par des repères circulaires
+    const circleHelper = new THREE.Line(
+      new THREE.CircleGeometry(10, 64).setFromPoints(
+        Array.from({ length: 65 }).map((_, i) => {
+          const theta = (i / 64) * Math.PI * 2;
+          return new THREE.Vector3(
+            Math.cos(theta) * 10,
+            -4.9,
+            Math.sin(theta) * 10
+          );
+        })
+      ),
+      new THREE.LineBasicMaterial({
+        color: 0x888888,
+        transparent: true,
+        opacity: 0.4,
+      })
+    );
+    scene.add(circleHelper);
 
     // Create a video element
     const video = document.createElement("video");
+    videoRef.current = video;
     video.src = "/romev2.mp4"; // Replace with your video path
     video.crossOrigin = "anonymous";
-    video.loop = true;
+    video.loop = false; // Désactiver la boucle automatique pour gérer notre propre boucle
     video.muted = true;
     video.playsInline = true;
+
+    // Gérer la lecture en boucle de la section spécifique
+    video.addEventListener("timeupdate", () => {
+      // Si la vidéo dépasse la fin du segment, revenir au début du segment
+      if (video.currentTime >= endTime) {
+        video.currentTime = startTime;
+      }
+    });
 
     // Create video texture
     const videoTexture = new THREE.VideoTexture(video);
@@ -94,6 +150,8 @@ export default function Home() {
     // Start video playback when user interacts
     document.addEventListener("click", () => {
       if (video.paused) {
+        // S'assurer que la vidéo commence au début du segment
+        video.currentTime = startTime;
         video
           .play()
           .then(() => {
@@ -108,6 +166,7 @@ export default function Home() {
     });
 
     // Auto-play attempt (may be blocked by browser)
+    video.currentTime = startTime; // Commencer du point de départ défini
     video
       .play()
       .catch((err) => {
@@ -169,7 +228,17 @@ export default function Home() {
         vrButton.remove();
       }
     };
-  }, []);
+  }, [startTime, endTime]);
+
+  // Fonction pour modifier les points de début et de fin
+  const updateVideoSegment = (start: number, end: number) => {
+    setStartTime(start);
+    setEndTime(end);
+    // Mettre à jour le temps de lecture si la vidéo est chargée
+    if (videoRef.current) {
+      videoRef.current.currentTime = start;
+    }
+  };
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100vh" }}>
@@ -188,6 +257,44 @@ export default function Home() {
         }}
       >
         {videoTime}
+      </div>
+      <div
+        style={{
+          position: "absolute",
+          top: "20px",
+          left: "20px",
+          background: "rgba(0,0,0,0.5)",
+          color: "white",
+          padding: "10px",
+          borderRadius: "5px",
+          zIndex: 100,
+        }}
+      >
+        <div>
+          <label htmlFor="startTime">Début: </label>
+          <input
+            id="startTime"
+            type="number"
+            min="0"
+            max={endTime - 1}
+            value={startTime}
+            onChange={(e) =>
+              updateVideoSegment(Number(e.target.value), endTime)
+            }
+            style={{ width: "60px", marginRight: "10px" }}
+          />
+          <label htmlFor="endTime">Fin: </label>
+          <input
+            id="endTime"
+            type="number"
+            min={startTime + 1}
+            value={endTime}
+            onChange={(e) =>
+              updateVideoSegment(startTime, Number(e.target.value))
+            }
+            style={{ width: "60px" }}
+          />
+        </div>
       </div>
     </div>
   );

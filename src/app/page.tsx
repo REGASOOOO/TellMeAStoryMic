@@ -5,48 +5,104 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { VRButton } from "three/examples/jsm/webxr/VRButton.js";
 
+const SCENES = [
+  {
+    id: 1,
+    name: "Rome",
+    videoSrc: "/romev2.mp4",
+    defaultStartTime: 215,
+    defaultEndTime: 420,
+  },
+  {
+    id: 2,
+    name: "Petra",
+    videoSrc: "/romev2.mp4",
+    defaultStartTime: 200,
+    defaultEndTime: 400,
+  },
+];
+
 export default function Home() {
   const mountRef = useRef<HTMLDivElement>(null);
   const [videoTime, setVideoTime] = useState("0:00");
-  // Référence pour le contrôle de la vidéo
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  // Paramètres pour le segment de vidéo à répéter (en secondes)
-  const [startTime, setStartTime] = useState(215); // Début du segment
-  const [endTime, setEndTime] = useState(420); // Fin du segment (30 secondes par défaut)
+  
+  // État pour gérer les scènes
+  const [activeSceneId, setActiveSceneId] = useState(1);
+  
+  // États individuels pour chaque scène
+  const [startTime, setStartTime] = useState(SCENES[0].defaultStartTime);
+  const [endTime, setEndTime] = useState(SCENES[0].defaultEndTime);
+  
+  // Références pour le rendu et l'animation
+  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+  const sceneRef = useRef<THREE.Scene | null>(null);
+  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const sphereRef = useRef<THREE.Mesh | null>(null);
+  const videoTextureRef = useRef<THREE.VideoTexture | null>(null);
+  const vrButtonRef = useRef<HTMLElement | null>(null);
+  
+  // Référence pour l'intervalle de mise à jour du temps
+  const videoTimeIntervalRef = useRef<number | null>(null);
+
+  // Fonction pour changer de scène
+  const changeScene = (sceneId: number) => {
+    const sceneData = SCENES.find(scene => scene.id === sceneId);
+    if (!sceneData) return;
+    
+    setActiveSceneId(sceneId);
+    
+    // Mettre à jour les temps par défaut pour la nouvelle scène
+    setStartTime(sceneData.defaultStartTime);
+    setEndTime(sceneData.defaultEndTime);
+    
+    // Mettre à jour la vidéo
+    if (videoRef.current) {
+      videoRef.current.src = sceneData.videoSrc;
+      videoRef.current.currentTime = sceneData.defaultStartTime;
+      videoRef.current.play().catch(err => {
+        console.log("Auto-play prevented after scene change. Click to play the video.");
+      });
+    }
+  };
 
   useEffect(() => {
     if (!mountRef.current) return;
 
+    // Créer la scène, la caméra et le renderer
     const scene = new THREE.Scene();
+    sceneRef.current = scene;
+    
     const camera = new THREE.PerspectiveCamera(
       75,
       window.innerWidth / window.innerHeight,
       0.1,
       1000
     );
+    cameraRef.current = camera;
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
+    rendererRef.current = renderer;
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
-
-    // Enable XR functionality
     renderer.xr.enabled = true;
 
-    // Append renderer to the DOM
     mountRef.current.appendChild(renderer.domElement);
 
-    // Add VR button to the DOM
-    document.body.appendChild(VRButton.createButton(renderer));
+    // Ajouter le bouton VR
+    const vrButton = VRButton.createButton(renderer);
+    vrButtonRef.current = vrButton;
+    document.body.appendChild(vrButton);
 
-    // Add OrbitControls for mouse camera control
+    // Contrôles pour la caméra
     const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true; // Adds smooth damping effect
+    controls.enableDamping = true;
     controls.dampingFactor = 0.05;
-    controls.rotateSpeed = 0.5; // Control rotation speed
-    controls.minDistance = 1; // Minimum zoom distance
-    controls.maxDistance = 40; // Don't zoom out beyond the sphere
+    controls.rotateSpeed = 0.5;
+    controls.minDistance = 1;
+    controls.maxDistance = 40;
 
-    // Remplacer le sol vert par un sol semi-transparent
+    // Créer le sol et les éléments visuels (identique à votre code existant)
     const groundGeometry = new THREE.CircleGeometry(20, 32);
     const groundMaterial = new THREE.MeshBasicMaterial({
       color: 0xffffff,
@@ -55,11 +111,10 @@ export default function Home() {
       side: THREE.DoubleSide,
     });
     const ground = new THREE.Mesh(groundGeometry, groundMaterial);
-    ground.rotation.x = Math.PI / 2; // Rotation horizontale
-    ground.position.y = -10; // Position légèrement plus haute pour une meilleure visibilité
+    ground.rotation.x = Math.PI / 2;
+    ground.position.y = -10;
     scene.add(ground);
 
-    // Ajouter un disque plus petit pour marquer le centre
     const centerGeometry = new THREE.CircleGeometry(1, 32);
     const centerMaterial = new THREE.MeshBasicMaterial({
       color: 0x3366ff,
@@ -81,7 +136,6 @@ export default function Home() {
     const gridHelper = new THREE.GridHelper(10, 10);
     scene.add(gridHelper);
 
-    // Remplacer la grille par des repères circulaires
     const circleHelper = new THREE.Line(
       new THREE.CircleGeometry(10, 64).setFromPoints(
         Array.from({ length: 65 }).map((_, i) => {
@@ -101,33 +155,35 @@ export default function Home() {
     );
     scene.add(circleHelper);
 
-    // Create a video element
+    // Créer l'élément vidéo
     const video = document.createElement("video");
     videoRef.current = video;
-    video.src = "/romev2.mp4"; // Replace with your video path
+    
+    // Utiliser la source de la scène active
+    const activeScene = SCENES.find(scene => scene.id === activeSceneId);
+    video.src = activeScene?.videoSrc || SCENES[0].videoSrc;
     video.crossOrigin = "anonymous";
-    video.loop = false; // Désactiver la boucle automatique pour gérer notre propre boucle
+    video.loop = false;
     video.muted = true;
     video.playsInline = true;
 
-    // Gérer la lecture en boucle de la section spécifique
+    // Gestion de la boucle vidéo
     video.addEventListener("timeupdate", () => {
-      // Si la vidéo dépasse la fin du segment, revenir au début du segment
       if (video.currentTime >= endTime) {
         video.currentTime = startTime;
       }
     });
 
-    // Create video texture
+    // Créer la texture vidéo
     const videoTexture = new THREE.VideoTexture(video);
+    videoTextureRef.current = videoTexture;
     videoTexture.minFilter = THREE.LinearFilter;
     videoTexture.magFilter = THREE.LinearFilter;
     videoTexture.format = THREE.RGBAFormat;
     videoTexture.mapping = THREE.EquirectangularReflectionMapping;
 
-    // Create a sphere to display the 360 video
+    // Créer la sphère pour afficher la vidéo 360
     const sphereGeometry = new THREE.SphereGeometry(500, 60, 40);
-    // Flip the geometry inside out
     sphereGeometry.scale(-1, 1, 1);
 
     const sphereMaterial = new THREE.MeshBasicMaterial({
@@ -135,10 +191,11 @@ export default function Home() {
     });
 
     const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+    sphereRef.current = sphere;
     scene.add(sphere);
 
-    // Ajout de la physique avec Cannon.js
-    const pillars: THREE.Mesh[] = [];
+    // Ajout des piliers (identique à votre code)
+    const pillars: THREE.Group[] = [];
 
     const pillarGeometry = new THREE.CylinderGeometry(0.5, 0.6, 4, 32);
     const pillarMaterial = new THREE.MeshStandardMaterial({ 
@@ -153,13 +210,12 @@ export default function Home() {
 
     function createInitialPillars() {
       const numberOfPillars = 2;
-      const radius = 15; // Distance par rapport au centre
-      const arcAngle = Math.PI / 2; // 90 degrés (quart de cercle)
+      const radius = 15;
+      const arcAngle = Math.PI / 2;
       
       for (let i = 0; i < numberOfPillars; i++) {
           const angle = -Math.PI/4 + (i * arcAngle) / (numberOfPillars - 1);
           
-          // Calculer la position sur l'arc de cercle
           const x = radius * Math.cos(angle);
           const z = radius * Math.sin(angle);
           
@@ -168,11 +224,9 @@ export default function Home() {
           const pillarGroup = new THREE.Group();
           pillarGroup.add(pillar);
           
-          // Positionner le groupe sur l'arc de cercle
           pillarGroup.position.set(x, 20, z);
-          pillarGroup.userData.shouldFall = false; // Flag pour contrôler la chute
+          pillarGroup.userData.shouldFall = false;
           
-          // Orienter le pilier vers la caméra
           pillarGroup.lookAt(0, 20, -15);
           
           scene.add(pillarGroup);
@@ -182,7 +236,7 @@ export default function Home() {
 
     createInitialPillars();
 
-    // Ajouter une lumière pour voir les piliers
+    // Ajouter l'éclairage
     const light = new THREE.DirectionalLight(0xffffff, 1);
     light.position.set(0, 10, 0);
     scene.add(light);
@@ -192,7 +246,6 @@ export default function Home() {
     function animatePillars() {
       const currentTime = Date.now();
       
-      // Vérifier si c'est le moment de faire tomber un nouveau pilier
       if (currentPillarIndex < pillars.length && 
           currentTime - lastFallTime > fallDelay) {
           pillars[currentPillarIndex].userData.shouldFall = true;
@@ -200,12 +253,10 @@ export default function Home() {
           currentPillarIndex++;
       }
       
-      // Animer les piliers qui doivent tomber
       pillars.forEach((pillarGroup) => {
           if (pillarGroup.userData.shouldFall && pillarGroup.position.y > 0) {
-              pillarGroup.position.y -= 1; // Vitesse de chute
+              pillarGroup.position.y -= 1;
               
-              // Arrêter au niveau du sol
               if (pillarGroup.position.y < 0) {
                   pillarGroup.position.y = 0;
               }
@@ -213,27 +264,23 @@ export default function Home() {
       });
     }
 
-    // Timer to update video time
-    let videoTimeInterval: number;
-
-    // Function to format time as mm:ss
+    // Formater le temps
     const formatTime = (seconds: number) => {
       const mins = Math.floor(seconds / 60);
       const secs = Math.floor(seconds % 60);
       return `${mins}:${secs.toString().padStart(2, "0")}`;
     };
 
-    // Start video playback when user interacts
+    // Démarrer la lecture vidéo sur interaction
     document.addEventListener("click", () => {
       if (video.paused) {
-        // S'assurer que la vidéo commence au début du segment
         video.currentTime = startTime;
         video
           .play()
           .then(() => {
             console.log("Video playing");
-            // Start timer when video plays
-            videoTimeInterval = window.setInterval(() => {
+            if (videoTimeIntervalRef.current) clearInterval(videoTimeIntervalRef.current);
+            videoTimeIntervalRef.current = window.setInterval(() => {
               setVideoTime(formatTime(video.currentTime));
             }, 1000);
           })
@@ -241,30 +288,28 @@ export default function Home() {
       }
     });
 
-    // Auto-play attempt (may be blocked by browser)
-    video.currentTime = startTime; // Commencer du point de départ défini
+    // Tentative d'auto-play
+    video.currentTime = startTime;
     video
       .play()
       .catch((err) => {
         console.log("Auto-play prevented. Click to play the video.");
       })
       .then(() => {
-        // Start timer if auto-play succeeds
-        videoTimeInterval = window.setInterval(() => {
+        if (videoTimeIntervalRef.current) clearInterval(videoTimeIntervalRef.current);
+        videoTimeIntervalRef.current = window.setInterval(() => {
           setVideoTime(formatTime(video.currentTime));
         }, 1000);
       });
 
-    // Animation loop for VR
+    // Boucle d'animation
     function animate() {
-      // Update controls only in non-VR mode
       if (!renderer.xr.isPresenting) {
         controls.update();
       }
 
-      animatePillars(); // Ajouter l'animation des piliers
+      animatePillars();
 
-      // Ensure video texture updates
       if (video.readyState >= video.HAVE_CURRENT_DATA) {
         videoTexture.needsUpdate = true;
       }
@@ -272,10 +317,9 @@ export default function Home() {
       renderer.render(scene, camera);
     }
 
-    // Use the XR animation loop instead of requestAnimationFrame
     renderer.setAnimationLoop(animate);
 
-    // Handle window resize
+    // Gestion du redimensionnement
     const handleResize = () => {
       const width = window.innerWidth;
       const height = window.innerHeight;
@@ -287,69 +331,44 @@ export default function Home() {
 
     window.addEventListener("resize", handleResize);
 
-    // Cleanup function
+    // Nettoyage
     return () => {
       window.removeEventListener("resize", handleResize);
-      mountRef.current?.removeChild(renderer.domElement);
+      if (mountRef.current && renderer.domElement) {
+        mountRef.current.removeChild(renderer.domElement);
+      }
       renderer.setAnimationLoop(null);
       video.pause();
       video.src = "";
 
-      // Clear the video time interval
-      if (videoTimeInterval) {
-        clearInterval(videoTimeInterval);
+      if (videoTimeIntervalRef.current) {
+        clearInterval(videoTimeIntervalRef.current);
       }
 
-      // Remove VR button
-      const vrButton = document.querySelector(".VRButton");
-      if (vrButton) {
-        vrButton.remove();
+      if (vrButtonRef.current) {
+        vrButtonRef.current.remove();
       }
 
       pillars.forEach(pillar => scene.remove(pillar));
     };
-  }, [startTime, endTime]);
+  }, [activeSceneId, startTime, endTime]); // Ajouter activeSceneId comme dépendance
 
   // Fonction pour modifier les points de début et de fin
   const updateVideoSegment = (start: number, end: number) => {
     setStartTime(start);
     setEndTime(end);
-    // Mettre à jour le temps de lecture si la vidéo est chargée
     if (videoRef.current) {
       videoRef.current.currentTime = start;
     }
   };
 
   return (
-    <div style={{ position: "relative", width: "100%", height: "100vh" }}>
-      <div ref={mountRef} style={{ width: "100%", height: "100%" }}></div>
-      <div
-        style={{
-          position: "absolute",
-          bottom: "20px",
-          left: "20px",
-          background: "rgba(0,0,0,0.5)",
-          color: "white",
-          padding: "5px 10px",
-          borderRadius: "5px",
-          fontSize: "16px",
-          zIndex: 100,
-        }}
-      >
+    <div className="vr-container">
+      <div ref={mountRef} className="vr-scene"></div>
+      <div className="video-timer">
         {videoTime}
       </div>
-      <div
-        style={{
-          position: "absolute",
-          top: "20px",
-          left: "20px",
-          background: "rgba(0,0,0,0.5)",
-          color: "white",
-          padding: "10px",
-          borderRadius: "5px",
-          zIndex: 100,
-        }}
-      >
+      <div className="video-controls">
         <div>
           <label htmlFor="startTime">Début: </label>
           <input
@@ -361,7 +380,7 @@ export default function Home() {
             onChange={(e) =>
               updateVideoSegment(Number(e.target.value), endTime)
             }
-            style={{ width: "60px", marginRight: "10px" }}
+            className="time-input"
           />
           <label htmlFor="endTime">Fin: </label>
           <input
@@ -372,9 +391,21 @@ export default function Home() {
             onChange={(e) =>
               updateVideoSegment(startTime, Number(e.target.value))
             }
-            style={{ width: "60px" }}
+            className="time-input"
           />
         </div>
+      </div>
+      
+      <div className="scene-selector">
+        {SCENES.map(scene => (
+          <button
+            key={scene.id}
+            className={`scene-button ${activeSceneId === scene.id ? 'active' : ''}`}
+            onClick={() => changeScene(scene.id)}
+          >
+            {scene.name}
+          </button>
+        ))}
       </div>
     </div>
   );

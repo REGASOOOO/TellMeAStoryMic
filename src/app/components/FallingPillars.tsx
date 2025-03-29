@@ -6,6 +6,12 @@ interface FallingPillarsProps {
   camera?: THREE.Camera;
 }
 
+// Images en base64
+const GLOBE_SVG_BASE64 =
+  "data:image/svg+xml;base64,PHN2ZyBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxNiAxNiI+PGcgY2xpcC1wYXRoPSJ1cmwoI2EpIj48cGF0aCBmaWxsLXJ1bGU9ImV2ZW5vZGQiIGNsaXAtcnVsZT0iZXZlbm9kZCIgZD0iTTEwLjI3IDE0LjFhNi41IDYuNSAwIDAgMCAzLjY3LTMuNDVxLTEuMjQuMjEtMi43LjM0LS4zMSAxLjgzLS45NyAzLjFNOCAxNkE4IDggMCAxIDAgOCAwYTggOCAwIDAgMCAwIDE2bS40OC0xLjUyYTcgNyAwIDAgMS0uOTYgMEg3LjVhNCAwIDAgMS0uODQtMS4zMnEtLjM4LS44OS0uNjMtMi4wOGE0MCAwIDAgMCAzLjkyIDBxLS4yNSAxLjItLjYzIDIuMDhhNCAwIDAgMS0uODQgMS4zMXptMi45NC00Ljc2cTEuNjYtLjE1IDIuOTUtLjQzYTcgNyAwIDAgMCAwLTIuNThxLTEuMy0uMjctMi45NS0uNDNhMTggMCAwIDEgMCAzLjQ0bS0xLjI3LTMuNTRhMTcgMCAwIDEgMCAzLjY0YTM5IDAgMCAxLTQuMyAwYTE3IDAgMCAxIDAtMy42NCAzOSAwIDAgMSA0LjMgMG0xLjEtMS4xN3ExLjQ1LjEzIDIuNjkuMzRhNi41IDYuNSAwIDAgMC0zLjY3LTMuNDRxLjY1IDEuMjYuOTggMy4xTTguNDggMS41bC4wMS4wMnEuNDEuMzcuODQgMS4zMS4zOC44OS42MyAyLjA4YTQwIDAgMCAwLTMuOTIgMHEuMjUtMS4yLjYzLTIuMDhhNCAwIDAgMS44NS0xLjMyIDcgNyAwIDAgMSAuOTYgMG0tMi43NS40YTYuNSA2LjUgMCAwIDAtMy42NyAzLjQ0IDI5IDAgMCAxIDIuNy0uMzRxLjMxLTEuODMuOTctMy4xTTQuNTggNi4yOHEtMS42Ni4xNi0yLjk1LjQzYTcgNyAwIDAgMCAwIDIuNThxMS4zLjI3IDIuOTUuNDNhMTggMCAwIDEgMC0zLjQ0bS4xNyA0LjcxcS0xLjQ1LS4xMi0yLjY5LS4zNGE2LjUgNi41IDAgMCAwIDMuNjcgMy40NHEtLjY1LTEuMjctLjk4LTMuMSIgZmlsbD0iIzY2NiIvPjwvZz48ZGVmcz48Y2xpcFBhdGggaWQ9ImEiPjxwYXRoIGZpbGw9IiNmZmYiIGQ9Ik0wIDBoMTZ2MTZIMHoiLz48L2NsaXBQYXRoPjwvZGVmcz48L3N2Zz4=";
+const WINDOW_SVG_BASE64 =
+  "data:image/svg+xml;base64,PHN2ZyBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxNiAxNiI+PHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik0xLjUgMi41aDEzdjEwYTEgMSAwIDAgMS0xIDFoLTExYTEgMSAwIDAgMS0xLTF6TTAgMWgxNnYxMS41YTIuNSAyLjUgMCAwIDEtMi41IDIuNWgtMTFBMi41IDIuNSAwIDAgMSAwIDEyLjV6bTMuNzUgNC41YS43NS43NSAwIDEgMCAwLTEuNS43NS43NSAwIDAgMCAwIDEuNU03IDQuNzVhLjc1Ljc1IDAgMSAxLTEuNSAwIC43NS43NSAwIDAgMSAxLjUgMG0xLjc1Ljc1YS43NS43NSAwIDEgMCAwLTEuNS43NS43NSAwIDAgMCAwIDEuNSIgZmlsbD0iIzY2NiIvPjwvc3ZnPg==";
+
 export default function FallingPillars({ scene, camera }: FallingPillarsProps) {
   const [pillars, setPillars] = useState<THREE.Group[]>([]);
   const cameraRef = useRef<THREE.Camera | null>(null);
@@ -58,8 +64,8 @@ export default function FallingPillars({ scene, camera }: FallingPillarsProps) {
     // Chargeur de textures pour les images
     const textureLoader = new THREE.TextureLoader();
 
-    // Chemins des images à afficher au-dessus des piliers
-    const imagePaths = ["/globe.svg", "/window.svg"];
+    // Tableau des images en base64 au lieu des chemins
+    const imageBase64Sources = [GLOBE_SVG_BASE64, WINDOW_SVG_BASE64];
 
     // Création des piliers initiaux
     function createInitialPillars() {
@@ -121,7 +127,7 @@ export default function FallingPillars({ scene, camera }: FallingPillarsProps) {
       if (imageCreated[pillarIndex]) return;
 
       if (
-        pillarIndex >= imagePaths.length ||
+        pillarIndex >= imageBase64Sources.length ||
         pillarIndex >= createdPillars.length
       )
         return;
@@ -132,7 +138,7 @@ export default function FallingPillars({ scene, camera }: FallingPillarsProps) {
       imageCreated[pillarIndex] = true;
 
       textureLoader.load(
-        imagePaths[pillarIndex],
+        imageBase64Sources[pillarIndex],
         (texture) => {
           // Créer un plan avec l'image comme texture
           const imageGeometry = new THREE.PlaneGeometry(1.5, 1.5);

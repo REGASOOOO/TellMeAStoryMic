@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { VRButton } from "three/examples/jsm/webxr/VRButton.js";
-import { TextureLoader } from 'three';
 
 export default function Home() {
   const mountRef = useRef<HTMLDivElement>(null);
@@ -140,27 +139,20 @@ export default function Home() {
 
     // Ajout de la physique avec Cannon.js
     const pillars: THREE.Mesh[] = [];
-    const textureLoader = new TextureLoader();
-    const marbleTexture = textureLoader.load('/marble-texture.jpg'); // Assurez-vous d'avoir cette texture
-    const normalMap = textureLoader.load('/marble-normal.jpg');      // Optionnel: texture pour les reliefs
-    const roughnessMap = textureLoader.load('/marble-roughness.jpg'); // Optionnel: texture pour la rugosité
 
     const pillarGeometry = new THREE.CylinderGeometry(0.5, 0.6, 4, 32);
     const pillarMaterial = new THREE.MeshStandardMaterial({ 
-        map: marbleTexture,
-        normalMap: normalMap,
-        roughnessMap: roughnessMap,
         roughness: 0.5,
         metalness: 0.1,
         bumpScale: 0.02
     });
 
     const fallDelay = 1000;
-    let lastFallTime = 0;
+    let lastFallTime = Date.now() + 2000;
     let currentPillarIndex = 0;
 
     function createInitialPillars() {
-      const numberOfPillars = 10;
+      const numberOfPillars = 2;
       const radius = 15; // Distance par rapport au centre
       const arcAngle = Math.PI / 2; // 90 degrés (quart de cercle)
       
@@ -173,20 +165,8 @@ export default function Home() {
           
           const pillar = new THREE.Mesh(pillarGeometry, pillarMaterial);
           
-          // Ajout des éléments décoratifs
-          const capitolGeometry = new THREE.CylinderGeometry(0.7, 0.5, 0.3, 32);
-          const baseGeometry = new THREE.CylinderGeometry(0.8, 0.6, 0.3, 32);
-          
-          const capitol = new THREE.Mesh(capitolGeometry, pillarMaterial);
-          const base = new THREE.Mesh(baseGeometry, pillarMaterial);
-          
-          capitol.position.y = 2;
-          base.position.y = -2;
-          
           const pillarGroup = new THREE.Group();
           pillarGroup.add(pillar);
-          pillarGroup.add(capitol);
-          pillarGroup.add(base);
           
           // Positionner le groupe sur l'arc de cercle
           pillarGroup.position.set(x, 20, z);

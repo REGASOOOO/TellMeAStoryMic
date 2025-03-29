@@ -64,7 +64,7 @@ export default function FallingPillars({ scene, camera }: FallingPillarsProps) {
     // Création des piliers initiaux
     function createInitialPillars() {
       const numberOfPillars = 2;
-      const radius = 8;
+      const radius = 4;
       const arcAngle = Math.PI / 3;
 
       for (let i = 0; i < numberOfPillars; i++) {
@@ -150,7 +150,7 @@ export default function FallingPillars({ scene, camera }: FallingPillarsProps) {
           // Positionner l'image juste au-dessus du pilier tombé
           imageGroup.position.set(
             pillar.position.x,
-            2, // Position fixe au-dessus du pilier tombé
+            -18, // Position ajustée au-dessus du pilier tombé (qui est à -20)
             pillar.position.z
           );
 
@@ -204,8 +204,8 @@ export default function FallingPillars({ scene, camera }: FallingPillarsProps) {
           pillarGroup.position.y -= 1; // Vitesse de chute
 
           // Arrêter au niveau du sol
-          if (pillarGroup.position.y < 0) {
-            pillarGroup.position.y = 0;
+          if (pillarGroup.position.y < -20) {
+            pillarGroup.position.y = -20;
 
             // Si le pilier n'était pas déjà marqué comme atterri
             if (!pillarGroup.userData.landed) {

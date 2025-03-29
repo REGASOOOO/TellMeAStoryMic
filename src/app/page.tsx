@@ -115,7 +115,7 @@ export default function Home() {
     });
     const ground = new THREE.Mesh(groundGeometry, groundMaterial);
     ground.rotation.x = Math.PI / 2;
-    ground.position.y = -10;
+    ground.position.y = -20; // Modification de la position Y de -10 à -20 pour descendre le sol
     scene.add(ground);
 
     const centerGeometry = new THREE.CircleGeometry(1, 32);
@@ -136,8 +136,9 @@ export default function Home() {
     controls.target.set(0, 0, 0);
     controls.update();
 
-    const gridHelper = new THREE.GridHelper(10, 10);
-    scene.add(gridHelper);
+    // Suppression du quadrillage (gridHelper)
+    // const gridHelper = new THREE.GridHelper(10, 10);
+    // scene.add(gridHelper);
 
     const circleHelper = new THREE.Line(
       new THREE.CircleGeometry(10, 64).setFromPoints(

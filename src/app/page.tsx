@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { VRButton } from "three/examples/jsm/webxr/VRButton.js";
+import RomanPedestal from "./components/RomanPedestal";
 
 export default function Home() {
   const mountRef = useRef<HTMLDivElement>(null);
@@ -12,12 +13,19 @@ export default function Home() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   // Paramètres pour le segment de vidéo à répéter (en secondes)
   const [startTime, setStartTime] = useState(215); // Début du segment
-  const [endTime, setEndTime] = useState(420); // Fin du segment (30 secondes par défaut)
+  const [endTime, setEndTime] = useState(420); // Fin du segment
+  // État pour suivre le chargement du modèle 3D
+  const [modelLoaded, setModelLoaded] = useState(false);
+  // Référence à la scène pour la passer au composant RomanPedestal
+  const [scene, setScene] = useState<THREE.Scene | null>(null);
 
   useEffect(() => {
     if (!mountRef.current) return;
 
     const scene = new THREE.Scene();
+    // Stocker la scène dans l'état pour la passer au composant RomanPedestal
+    setScene(scene);
+
     const camera = new THREE.PerspectiveCamera(
       75,
       window.innerWidth / window.innerHeight,
@@ -28,6 +36,9 @@ export default function Home() {
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
+
+    // Stocker le renderer dans les userData de la scène pour l'utiliser dans RomanPedestal
+    scene.userData.renderer = renderer;
 
     // Enable XR functionality
     renderer.xr.enabled = true;
@@ -186,6 +197,11 @@ export default function Home() {
         controls.update();
       }
 
+      // Exécuter toutes les fonctions d'animation enregistrées par les composants enfants
+      if (scene.userData.animationFunctions) {
+        scene.userData.animationFunctions.forEach((fn: Function) => fn());
+      }
+
       // Ensure video texture updates
       if (video.readyState >= video.HAVE_CURRENT_DATA) {
         videoTexture.needsUpdate = true;
@@ -240,9 +256,25 @@ export default function Home() {
     }
   };
 
+  // Fonction appelée quand le modèle est chargé
+  const handleModelLoaded = () => {
+    setModelLoaded(true);
+  };
+
   return (
     <div style={{ position: "relative", width: "100%", height: "100vh" }}>
       <div ref={mountRef} style={{ width: "100%", height: "100%" }}></div>
+
+      {/* Rendu conditionnel du composant RomanPedestal une fois que la scène est prête */}
+      {scene && (
+        <RomanPedestal
+          scene={scene}
+          position={[0, -4, -10]}
+          scale={[0.1, 0.1, 0.1]}
+          onLoaded={handleModelLoaded}
+        />
+      )}
+
       <div
         style={{
           position: "absolute",
@@ -295,6 +327,7 @@ export default function Home() {
             style={{ width: "60px" }}
           />
         </div>
+        {!modelLoaded && <p>Chargement du modèle 3D...</p>}
       </div>
     </div>
   );

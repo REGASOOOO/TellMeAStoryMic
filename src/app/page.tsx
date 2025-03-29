@@ -8,7 +8,12 @@ import { TextureLoader } from 'three';
 
 export default function Home() {
   const mountRef = useRef<HTMLDivElement>(null);
-  const [videoTime, setVideoTime] = useState("3:34");
+  const [videoTime, setVideoTime] = useState("0:00");
+  // Référence pour le contrôle de la vidéo
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  // Paramètres pour le segment de vidéo à répéter (en secondes)
+  const [startTime, setStartTime] = useState(215); // Début du segment
+  const [endTime, setEndTime] = useState(420); // Fin du segment (30 secondes par défaut)
 
   useEffect(() => {
     if (!mountRef.current) return;
@@ -42,25 +47,77 @@ export default function Home() {
     controls.minDistance = 1; // Minimum zoom distance
     controls.maxDistance = 40; // Don't zoom out beyond the sphere
 
-    // Position camera for better VR experience - slightly elevated
-    camera.position.set(0, 1.6, 5); // 1.6 is approximate standing eye level
+    // Remplacer le sol vert par un sol semi-transparent
+    const groundGeometry = new THREE.CircleGeometry(20, 32);
+    const groundMaterial = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.3,
+      side: THREE.DoubleSide,
+    });
+    const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+    ground.rotation.x = Math.PI / 2; // Rotation horizontale
+    ground.position.y = -10; // Position légèrement plus haute pour une meilleure visibilité
+    scene.add(ground);
 
-    // Create a primitive object to represent controller position
-    const controllerModelFactory = new THREE.Mesh(
-      new THREE.BoxGeometry(0.1, 0.1, 0.1),
-      new THREE.MeshBasicMaterial({ color: 0xff0000 })
-    );
+    // Ajouter un disque plus petit pour marquer le centre
+    const centerGeometry = new THREE.CircleGeometry(1, 32);
+    const centerMaterial = new THREE.MeshBasicMaterial({
+      color: 0x3366ff,
+      transparent: true,
+      opacity: 0.5,
+      side: THREE.DoubleSide,
+    });
+    const centerMark = new THREE.Mesh(centerGeometry, centerMaterial);
+    centerMark.rotation.x = Math.PI / 2;
+    centerMark.position.y = -4.9;
+    scene.add(centerMark);
+
+    camera.position.set(-1, 0, 0);
+    camera.lookAt(0, 0, 90);
+
+    controls.target.set(0, 0, 0);
+    controls.update();
 
     const gridHelper = new THREE.GridHelper(10, 10);
     scene.add(gridHelper);
 
+    // Remplacer la grille par des repères circulaires
+    const circleHelper = new THREE.Line(
+      new THREE.CircleGeometry(10, 64).setFromPoints(
+        Array.from({ length: 65 }).map((_, i) => {
+          const theta = (i / 64) * Math.PI * 2;
+          return new THREE.Vector3(
+            Math.cos(theta) * 10,
+            -4.9,
+            Math.sin(theta) * 10
+          );
+        })
+      ),
+      new THREE.LineBasicMaterial({
+        color: 0x888888,
+        transparent: true,
+        opacity: 0.4,
+      })
+    );
+    scene.add(circleHelper);
+
     // Create a video element
     const video = document.createElement("video");
-    video.src = "/romev2.mp4";
+    videoRef.current = video;
+    video.src = "/romev2.mp4"; // Replace with your video path
     video.crossOrigin = "anonymous";
-    video.loop = true;
+    video.loop = false; // Désactiver la boucle automatique pour gérer notre propre boucle
     video.muted = true;
     video.playsInline = true;
+
+    // Gérer la lecture en boucle de la section spécifique
+    video.addEventListener("timeupdate", () => {
+      // Si la vidéo dépasse la fin du segment, revenir au début du segment
+      if (video.currentTime >= endTime) {
+        video.currentTime = startTime;
+      }
+    });
 
     // Create video texture
     const videoTexture = new THREE.VideoTexture(video);
@@ -98,50 +155,52 @@ export default function Home() {
         bumpScale: 0.02
     });
 
-    // Fonction pour créer un nouveau pilier
-    function createPillar() {
-        const pillar = new THREE.Mesh(pillarGeometry, pillarMaterial);
-        
-        // Position aléatoire en X et Z, mais gardez le pilier droit
-        pillar.position.set(
-            (Math.random() - 0.5) * 20, // X entre -10 et 10
-            20,                         // Y fixé en hauteur
-            (Math.random() - 0.5) * 20  // Z entre -10 et 10
-        );
-        
-        // Rotations uniquement autour de l'axe Y pour garder le pilier debout
-        pillar.rotation.set(
-            0,
-            Math.random() * Math.PI * 2,
-            0
-        );
+    const fallDelay = 1000;
+    let lastFallTime = 0;
+    let currentPillarIndex = 0;
 
-        // Ajout d'éléments décoratifs au pilier (chapiteau et base)
-        const capitolGeometry = new THREE.CylinderGeometry(0.7, 0.5, 0.3, 32);
-        const baseGeometry = new THREE.CylinderGeometry(0.8, 0.6, 0.3, 32);
-        
-        const capitol = new THREE.Mesh(capitolGeometry, pillarMaterial);
-        const base = new THREE.Mesh(baseGeometry, pillarMaterial);
-        
-        // Positionnement des éléments décoratifs
-        capitol.position.y = 2;  // Haut du pilier
-        base.position.y = -2;    // Bas du pilier
-        
-        // Grouper tous les éléments
-        const pillarGroup = new THREE.Group();
-        pillarGroup.add(pillar);
-        pillarGroup.add(capitol);
-        pillarGroup.add(base);
-        
-        // Positionner le groupe
-        pillarGroup.position.copy(pillar.position);
-        pillar.position.set(0, 0, 0);
-        
-        scene.add(pillarGroup);
-        pillars.push(pillarGroup);
-        
-        return pillarGroup;
+    function createInitialPillars() {
+      const numberOfPillars = 10;
+      const radius = 15; // Distance par rapport au centre
+      const arcAngle = Math.PI / 2; // 90 degrés (quart de cercle)
+      
+      for (let i = 0; i < numberOfPillars; i++) {
+          const angle = -Math.PI/4 + (i * arcAngle) / (numberOfPillars - 1);
+          
+          // Calculer la position sur l'arc de cercle
+          const x = radius * Math.cos(angle);
+          const z = radius * Math.sin(angle);
+          
+          const pillar = new THREE.Mesh(pillarGeometry, pillarMaterial);
+          
+          // Ajout des éléments décoratifs
+          const capitolGeometry = new THREE.CylinderGeometry(0.7, 0.5, 0.3, 32);
+          const baseGeometry = new THREE.CylinderGeometry(0.8, 0.6, 0.3, 32);
+          
+          const capitol = new THREE.Mesh(capitolGeometry, pillarMaterial);
+          const base = new THREE.Mesh(baseGeometry, pillarMaterial);
+          
+          capitol.position.y = 2;
+          base.position.y = -2;
+          
+          const pillarGroup = new THREE.Group();
+          pillarGroup.add(pillar);
+          pillarGroup.add(capitol);
+          pillarGroup.add(base);
+          
+          // Positionner le groupe sur l'arc de cercle
+          pillarGroup.position.set(x, 20, z);
+          pillarGroup.userData.shouldFall = false; // Flag pour contrôler la chute
+          
+          // Orienter le pilier vers la caméra
+          pillarGroup.lookAt(0, 20, -15);
+          
+          scene.add(pillarGroup);
+          pillars.push(pillarGroup);
+      }
     }
+
+    createInitialPillars();
 
     // Ajouter une lumière pour voir les piliers
     const light = new THREE.DirectionalLight(0xffffff, 1);
@@ -151,21 +210,28 @@ export default function Home() {
 
     // Animation des piliers
     function animatePillars() {
-        pillars.forEach((pillarGroup) => {
-            if (pillarGroup.position.y > 0) {
-                pillarGroup.position.y -= 0.1; // Vitesse de chute
-                // Légère rotation pendant la chute (optionnel)
-                pillarGroup.rotation.y += 0.01;
-            }
-        });
-    }
-
-    // Créer un nouveau pilier toutes les 2 secondes
-    const pillarInterval = setInterval(() => {
-      if (pillars.length < 20) { // Limite le nombre de piliers
-        createPillar();
+      const currentTime = Date.now();
+      
+      // Vérifier si c'est le moment de faire tomber un nouveau pilier
+      if (currentPillarIndex < pillars.length && 
+          currentTime - lastFallTime > fallDelay) {
+          pillars[currentPillarIndex].userData.shouldFall = true;
+          lastFallTime = currentTime;
+          currentPillarIndex++;
       }
-    }, 2000);
+      
+      // Animer les piliers qui doivent tomber
+      pillars.forEach((pillarGroup) => {
+          if (pillarGroup.userData.shouldFall && pillarGroup.position.y > 0) {
+              pillarGroup.position.y -= 1; // Vitesse de chute
+              
+              // Arrêter au niveau du sol
+              if (pillarGroup.position.y < 0) {
+                  pillarGroup.position.y = 0;
+              }
+          }
+      });
+    }
 
     // Timer to update video time
     let videoTimeInterval: number;
@@ -180,6 +246,8 @@ export default function Home() {
     // Start video playback when user interacts
     document.addEventListener("click", () => {
       if (video.paused) {
+        // S'assurer que la vidéo commence au début du segment
+        video.currentTime = startTime;
         video
           .play()
           .then(() => {
@@ -194,6 +262,7 @@ export default function Home() {
     });
 
     // Auto-play attempt (may be blocked by browser)
+    video.currentTime = startTime; // Commencer du point de départ défini
     video
       .play()
       .catch((err) => {
@@ -257,10 +326,19 @@ export default function Home() {
         vrButton.remove();
       }
 
-      clearInterval(pillarInterval);
       pillars.forEach(pillar => scene.remove(pillar));
     };
-  }, []);
+  }, [startTime, endTime]);
+
+  // Fonction pour modifier les points de début et de fin
+  const updateVideoSegment = (start: number, end: number) => {
+    setStartTime(start);
+    setEndTime(end);
+    // Mettre à jour le temps de lecture si la vidéo est chargée
+    if (videoRef.current) {
+      videoRef.current.currentTime = start;
+    }
+  };
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100vh" }}>
@@ -279,6 +357,44 @@ export default function Home() {
         }}
       >
         {videoTime}
+      </div>
+      <div
+        style={{
+          position: "absolute",
+          top: "20px",
+          left: "20px",
+          background: "rgba(0,0,0,0.5)",
+          color: "white",
+          padding: "10px",
+          borderRadius: "5px",
+          zIndex: 100,
+        }}
+      >
+        <div>
+          <label htmlFor="startTime">Début: </label>
+          <input
+            id="startTime"
+            type="number"
+            min="0"
+            max={endTime - 1}
+            value={startTime}
+            onChange={(e) =>
+              updateVideoSegment(Number(e.target.value), endTime)
+            }
+            style={{ width: "60px", marginRight: "10px" }}
+          />
+          <label htmlFor="endTime">Fin: </label>
+          <input
+            id="endTime"
+            type="number"
+            min={startTime + 1}
+            value={endTime}
+            onChange={(e) =>
+              updateVideoSegment(startTime, Number(e.target.value))
+            }
+            style={{ width: "60px" }}
+          />
+        </div>
       </div>
     </div>
   );

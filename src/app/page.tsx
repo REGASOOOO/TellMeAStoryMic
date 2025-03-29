@@ -9,17 +9,26 @@ import FallingPillars from "./components/FallingPillars";
 const SCENES = [
   {
     id: 1,
+    name: "New-York",
+    videoSrc: "/NY.mp4",
+    defaultStartTime: 150,
+    defaultEndTime: 155,
+    duration: 5,
+  },
+  {
+    id: 2,
+    name: "Transtion",
+    videoSrc: "/transition3.mp4",
+    defaultStartTime: 9,
+    defaultEndTime: 14,
+    duration: 5,
+  },
+  {
+    id: 3,
     name: "Rome",
     videoSrc: "/romev2.mp4",
     defaultStartTime: 215,
     defaultEndTime: 420,
-  },
-  {
-    id: 2,
-    name: "Petra",
-    videoSrc: "/romev2.mp4",
-    defaultStartTime: 200,
-    defaultEndTime: 400,
   },
 ];
 
@@ -27,37 +36,60 @@ export default function Home() {
   const mountRef = useRef<HTMLDivElement>(null);
   const [videoTime, setVideoTime] = useState("0:00");
   const videoRef = useRef<HTMLVideoElement | null>(null);
-
-  // État pour gérer les scènes
   const [activeSceneId, setActiveSceneId] = useState(1);
-
-  // États individuels pour chaque scène
   const [startTime, setStartTime] = useState(SCENES[0].defaultStartTime);
   const [endTime, setEndTime] = useState(SCENES[0].defaultEndTime);
-
-  // Références pour le rendu et l'animation
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(new THREE.Scene());
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const sphereRef = useRef<THREE.Mesh | null>(null);
   const videoTextureRef = useRef<THREE.VideoTexture | null>(null);
   const vrButtonRef = useRef<HTMLElement | null>(null);
-
-  // Référence pour l'intervalle de mise à jour du temps
   const videoTimeIntervalRef = useRef<number | null>(null);
+  const [isTransitioning, setIsTransitioning] = useState(false);
 
-  // Fonction pour changer de scène
+  function cleanUpScene(scene: THREE.Scene) {
+    scene.traverse((object) => {
+      if (object instanceof THREE.Mesh) {
+        if (object.geometry) object.geometry.dispose();
+        if (object.material) {
+          if (Array.isArray(object.material)) {
+            object.material.forEach((material) => material.dispose());
+          } else {
+            object.material.dispose();
+          }
+        }
+      }
+    });
+  }
+
+  function switchScene(
+    renderer: THREE.WebGLRenderer,
+    newScene: THREE.Scene,
+    camera: THREE.Camera
+  ) {
+    // Clean up the current scene
+    if (renderer.xr.isPresenting && sceneRef.current) {
+      cleanUpScene(sceneRef.current);
+    }
+
+    // Set the new scene
+    sceneRef.current = newScene;
+
+    // Set the new animation loop
+    renderer.setAnimationLoop(() => {
+      renderer.render(newScene, camera);
+    });
+  }
+
   const changeScene = (sceneId: number) => {
     const sceneData = SCENES.find((scene) => scene.id === sceneId);
     if (!sceneData) return;
 
     setActiveSceneId(sceneId);
-
-    // Mettre à jour les temps par défaut pour la nouvelle scène
     setStartTime(sceneData.defaultStartTime);
     setEndTime(sceneData.defaultEndTime);
 
-    // Mettre à jour la vidéo
     if (videoRef.current) {
       videoRef.current.src = sceneData.videoSrc;
       videoRef.current.currentTime = sceneData.defaultStartTime;
@@ -67,12 +99,29 @@ export default function Home() {
         );
       });
     }
+
+    // Create a new scene and switch to it
+    const newScene = new THREE.Scene();
+    switchScene(rendererRef.current!, newScene, cameraRef.current!);
   };
 
   useEffect(() => {
-    if (!mountRef.current) return;
+    if (activeSceneId === 1 && !isTransitioning) {
+      const transitionTimeout = setTimeout(() => {
+        setIsTransitioning(true);
+        changeScene(2);
 
-    // Créer la scène, la caméra et le renderer
+        setTimeout(() => {
+          changeScene(3);
+          setIsTransitioning(false);
+        }, (SCENES[1].duration ?? 5) * 1000);
+      }, (SCENES[0].duration ?? 5) * 1000);
+      return () => clearTimeout(transitionTimeout);
+    }
+  }, [activeSceneId, isTransitioning]);
+
+  useEffect(() => {
+    if (!mountRef.current) return;
     const scene = new THREE.Scene();
     sceneRef.current = scene;
 
@@ -115,7 +164,7 @@ export default function Home() {
     });
     const ground = new THREE.Mesh(groundGeometry, groundMaterial);
     ground.rotation.x = Math.PI / 2;
-    ground.position.y = -20; // Modification de la position Y de -10 à -20 pour descendre le sol
+    ground.position.y = -20;
     scene.add(ground);
 
     const centerGeometry = new THREE.CircleGeometry(1, 32);
@@ -130,15 +179,16 @@ export default function Home() {
     centerMark.position.y = -4.9;
     scene.add(centerMark);
 
-    camera.position.set(-1, 0, 0);
-    camera.lookAt(0, 0, 90);
+    if (activeSceneId === 1 || activeSceneId === 2) {
+      camera.position.set(1, 0, 1);
+      camera.rotation.y = Math.PI / 4;
+    } else {
+      camera.position.set(-1, 0, 0);
+    }
+    camera.lookAt(0, 0, 0);
 
     controls.target.set(0, 0, 0);
     controls.update();
-
-    // Suppression du quadrillage (gridHelper)
-    // const gridHelper = new THREE.GridHelper(10, 10);
-    // scene.add(gridHelper);
 
     const circleHelper = new THREE.Line(
       new THREE.CircleGeometry(10, 64).setFromPoints(
@@ -204,9 +254,6 @@ export default function Home() {
     scene.add(light);
     scene.add(new THREE.AmbientLight(0x404040));
 
-    // Timer to update video time
-    let videoTimeInterval: number;
-
     // Function to format time as mm:ss
     const formatTime = (seconds: number) => {
       const mins = Math.floor(seconds / 60);
@@ -252,16 +299,13 @@ export default function Home() {
       if (!renderer.xr.isPresenting) {
         controls.update();
       }
-
       // Exécuter toutes les fonctions d'animation enregistrées
       if (scene.userData.animationFunctions) {
         scene.userData.animationFunctions.forEach((fn: Function) => fn());
       }
-
       if (video.readyState >= video.HAVE_CURRENT_DATA) {
         videoTexture.needsUpdate = true;
       }
-
       renderer.render(scene, camera);
     }
 
@@ -313,25 +357,11 @@ export default function Home() {
       <div ref={mountRef} style={{ width: "100%", height: "100%" }}></div>
 
       {/* Utilisation du composant FallingPillars avec triggerFall */}
-      {SCENES[1] && sceneRef.current && cameraRef.current && (
+      {activeSceneId === 3 && sceneRef.current && cameraRef.current && (
         <FallingPillars scene={sceneRef.current} camera={cameraRef.current} />
       )}
 
-      <div
-        style={{
-          position: "absolute",
-          bottom: "20px",
-          left: "20px",
-          background: "rgba(0,0,0,0.5)",
-          color: "white",
-          padding: "5px 10px",
-          borderRadius: "5px",
-          fontSize: "16px",
-          zIndex: 100,
-        }}
-      >
-        {videoTime}
-      </div>
+      <div className="video-timer">{videoTime}</div>
       <div className="video-controls">
         <div>
           <label htmlFor="startTime">Début: </label>
@@ -358,20 +388,6 @@ export default function Home() {
             className="time-input"
           />
         </div>
-      </div>
-
-      <div className="scene-selector">
-        {SCENES.map((scene) => (
-          <button
-            key={scene.id}
-            className={`scene-button ${
-              activeSceneId === scene.id ? "active" : ""
-            }`}
-            onClick={() => changeScene(scene.id)}
-          >
-            {scene.name}
-          </button>
-        ))}
       </div>
     </div>
   );

@@ -29,7 +29,7 @@ const SCENES = [
     videoSrc: "/romev2.mp4",
     defaultStartTime: 215,
     defaultEndTime: 420,
-  },
+  }
 ];
 
 export default function Home() {
@@ -100,7 +100,6 @@ export default function Home() {
       });
     }
 
-    // Create a new scene and switch to it
     const newScene = new THREE.Scene();
     switchScene(rendererRef.current!, newScene, cameraRef.current!);
   };
@@ -341,54 +340,14 @@ export default function Home() {
         vrButtonRef.current.remove();
       }
     };
-  }, [activeSceneId, startTime, endTime]); // Ajouter activeSceneId comme dépendance
-
-  // Fonction pour modifier les points de début et de fin
-  const updateVideoSegment = (start: number, end: number) => {
-    setStartTime(start);
-    setEndTime(end);
-    if (videoRef.current) {
-      videoRef.current.currentTime = start;
-    }
-  };
+  }, [activeSceneId, startTime, endTime]);
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100vh" }}>
       <div ref={mountRef} style={{ width: "100%", height: "100%" }}></div>
-
-      {/* Utilisation du composant FallingPillars avec triggerFall */}
       {activeSceneId === 3 && sceneRef.current && cameraRef.current && (
         <FallingPillars scene={sceneRef.current} camera={cameraRef.current} />
       )}
-
-      <div className="video-timer">{videoTime}</div>
-      <div className="video-controls">
-        <div>
-          <label htmlFor="startTime">Début: </label>
-          <input
-            id="startTime"
-            type="number"
-            min="0"
-            max={endTime - 1}
-            value={startTime}
-            onChange={(e) =>
-              updateVideoSegment(Number(e.target.value), endTime)
-            }
-            className="time-input"
-          />
-          <label htmlFor="endTime">Fin: </label>
-          <input
-            id="endTime"
-            type="number"
-            min={startTime + 1}
-            value={endTime}
-            onChange={(e) =>
-              updateVideoSegment(startTime, Number(e.target.value))
-            }
-            className="time-input"
-          />
-        </div>
-      </div>
-    </div>
+    </div>  
   );
 }

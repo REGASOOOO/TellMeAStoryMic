@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { VRButton } from "three/examples/jsm/webxr/VRButton.js";
+import { TextureLoader } from 'three';
 
 export default function Home() {
   const mountRef = useRef<HTMLDivElement>(null);
@@ -50,13 +51,12 @@ export default function Home() {
       new THREE.MeshBasicMaterial({ color: 0xff0000 })
     );
 
-    // Add more objects for spatial reference in VR
     const gridHelper = new THREE.GridHelper(10, 10);
     scene.add(gridHelper);
 
     // Create a video element
     const video = document.createElement("video");
-    video.src = "/romev2.mp4"; // Replace with your video path
+    video.src = "/romev2.mp4";
     video.crossOrigin = "anonymous";
     video.loop = true;
     video.muted = true;
@@ -80,6 +80,92 @@ export default function Home() {
 
     const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
     scene.add(sphere);
+
+    // Ajout de la physique avec Cannon.js
+    const pillars: THREE.Mesh[] = [];
+    const textureLoader = new TextureLoader();
+    const marbleTexture = textureLoader.load('/marble-texture.jpg'); // Assurez-vous d'avoir cette texture
+    const normalMap = textureLoader.load('/marble-normal.jpg');      // Optionnel: texture pour les reliefs
+    const roughnessMap = textureLoader.load('/marble-roughness.jpg'); // Optionnel: texture pour la rugosité
+
+    const pillarGeometry = new THREE.CylinderGeometry(0.5, 0.6, 4, 32);
+    const pillarMaterial = new THREE.MeshStandardMaterial({ 
+        map: marbleTexture,
+        normalMap: normalMap,
+        roughnessMap: roughnessMap,
+        roughness: 0.5,
+        metalness: 0.1,
+        bumpScale: 0.02
+    });
+
+    // Fonction pour créer un nouveau pilier
+    function createPillar() {
+        const pillar = new THREE.Mesh(pillarGeometry, pillarMaterial);
+        
+        // Position aléatoire en X et Z, mais gardez le pilier droit
+        pillar.position.set(
+            (Math.random() - 0.5) * 20, // X entre -10 et 10
+            20,                         // Y fixé en hauteur
+            (Math.random() - 0.5) * 20  // Z entre -10 et 10
+        );
+        
+        // Rotations uniquement autour de l'axe Y pour garder le pilier debout
+        pillar.rotation.set(
+            0,
+            Math.random() * Math.PI * 2,
+            0
+        );
+
+        // Ajout d'éléments décoratifs au pilier (chapiteau et base)
+        const capitolGeometry = new THREE.CylinderGeometry(0.7, 0.5, 0.3, 32);
+        const baseGeometry = new THREE.CylinderGeometry(0.8, 0.6, 0.3, 32);
+        
+        const capitol = new THREE.Mesh(capitolGeometry, pillarMaterial);
+        const base = new THREE.Mesh(baseGeometry, pillarMaterial);
+        
+        // Positionnement des éléments décoratifs
+        capitol.position.y = 2;  // Haut du pilier
+        base.position.y = -2;    // Bas du pilier
+        
+        // Grouper tous les éléments
+        const pillarGroup = new THREE.Group();
+        pillarGroup.add(pillar);
+        pillarGroup.add(capitol);
+        pillarGroup.add(base);
+        
+        // Positionner le groupe
+        pillarGroup.position.copy(pillar.position);
+        pillar.position.set(0, 0, 0);
+        
+        scene.add(pillarGroup);
+        pillars.push(pillarGroup);
+        
+        return pillarGroup;
+    }
+
+    // Ajouter une lumière pour voir les piliers
+    const light = new THREE.DirectionalLight(0xffffff, 1);
+    light.position.set(0, 10, 0);
+    scene.add(light);
+    scene.add(new THREE.AmbientLight(0x404040));
+
+    // Animation des piliers
+    function animatePillars() {
+        pillars.forEach((pillarGroup) => {
+            if (pillarGroup.position.y > 0) {
+                pillarGroup.position.y -= 0.1; // Vitesse de chute
+                // Légère rotation pendant la chute (optionnel)
+                pillarGroup.rotation.y += 0.01;
+            }
+        });
+    }
+
+    // Créer un nouveau pilier toutes les 2 secondes
+    const pillarInterval = setInterval(() => {
+      if (pillars.length < 20) { // Limite le nombre de piliers
+        createPillar();
+      }
+    }, 2000);
 
     // Timer to update video time
     let videoTimeInterval: number;
@@ -127,6 +213,8 @@ export default function Home() {
         controls.update();
       }
 
+      animatePillars(); // Ajouter l'animation des piliers
+
       // Ensure video texture updates
       if (video.readyState >= video.HAVE_CURRENT_DATA) {
         videoTexture.needsUpdate = true;
@@ -168,6 +256,9 @@ export default function Home() {
       if (vrButton) {
         vrButton.remove();
       }
+
+      clearInterval(pillarInterval);
+      pillars.forEach(pillar => scene.remove(pillar));
     };
   }, []);
 

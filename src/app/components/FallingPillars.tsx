@@ -2,6 +2,19 @@ import { useEffect, useState, useRef } from "react";
 import * as THREE from "three";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 
+// Add declaration for window.renderer
+declare global {
+  interface Window {
+    renderer?: {
+      xr?: {
+        isPresenting: boolean;
+        addEventListener: (event: string, listener: () => void) => void;
+      };
+      setAnimationLoop: (callback: (() => void) | null) => void;
+    };
+  }
+}
+
 interface FallingPillarsProps {
   scene: THREE.Scene;
   camera?: THREE.Camera;
@@ -34,6 +47,23 @@ export default function FallingPillars({ scene, camera }: FallingPillarsProps) {
           cameraRef.current = object;
         }
       });
+    }
+
+    // Vérifier si nous sommes en mode VR
+    let isVRSession = false;
+
+    // Function pour vérifier l'état VR - appelée lors de chaque frame
+    function checkVRState() {
+      // Vérifier si le renderer est en session XR
+      if (
+        window.renderer &&
+        window.renderer.xr &&
+        window.renderer.xr.isPresenting
+      ) {
+        isVRSession = true;
+      } else {
+        isVRSession = false;
+      }
     }
 
     // Précharger le modèle OBJ du piédestal romain
@@ -306,9 +336,17 @@ export default function FallingPillars({ scene, camera }: FallingPillarsProps) {
 
     // Animation des piliers et des images
     function animatePillars() {
-      const currentTime = Date.now();
+      checkVRState(); // Vérifier l'état VR à chaque frame
 
-      // Vérifier si c'est le moment de faire tomber un nouveau pilier
+      // Utiliser soit le timestamp passé à la fonction, soit l'horloge système
+      // En VR, XR gère sa propre animation, donc on doit éviter les timers basés sur Date.now()
+      const currentTime =
+        window.renderer && window.renderer.xr && window.renderer.xr.isPresenting
+          ? window.performance.now()
+          : Date.now();
+
+      // Le reste du code d'animation mais avec currentTime modifié pour être compatible VR
+      // Vérifier si c'est le moment de faire tomber un nouveau pilier - adaptation pour VR
       if (
         currentPillarIndex < createdPillars.length &&
         currentTime - lastFallTime > fallDelay
@@ -318,10 +356,12 @@ export default function FallingPillars({ scene, camera }: FallingPillarsProps) {
         currentPillarIndex++;
       }
 
-      // Animer les piliers qui doivent tomber
+      // Animer les piliers - utilisation d'une vitesse de chute basée sur le framerate, pas sur le temps
       createdPillars.forEach((pillarGroup, index) => {
         if (pillarGroup.userData.shouldFall && pillarGroup.position.y > 0) {
-          pillarGroup.position.y -= 1; // Vitesse de chute
+          // En VR, utiliser une vitesse constante par frame plutôt qu'une valeur fixe
+          const fallSpeed = isVRSession ? 0.1 : 1; // Ajuster selon les besoins
+          pillarGroup.position.y -= fallSpeed;
 
           // Arrêter au niveau du sol
           if (pillarGroup.position.y < -20) {
@@ -366,8 +406,9 @@ export default function FallingPillars({ scene, camera }: FallingPillarsProps) {
           const pillar = createdPillars[pillarIndex];
 
           // Animation de flottement au-dessus du piédestal
+          const floatSpeed = isVRSession ? 0.0005 : 0.001;
           imageData.group.position.y =
-            1.5 + Math.sin(currentTime * 0.001) * 0.2;
+            1.5 + Math.sin(currentTime * floatSpeed) * 0.2;
 
           // Effet de pulsation pour le halo
           if (imageData.mesh.children.length > 0) {
@@ -376,7 +417,9 @@ export default function FallingPillars({ scene, camera }: FallingPillarsProps) {
               halo instanceof THREE.Mesh &&
               halo.material instanceof THREE.MeshBasicMaterial
             ) {
-              halo.material.opacity = 0.3 + Math.sin(currentTime * 0.002) * 0.2;
+              const pulseSpeed = isVRSession ? 0.001 : 0.002;
+              halo.material.opacity =
+                0.3 + Math.sin(currentTime * pulseSpeed) * 0.2;
             }
           }
         });
@@ -390,12 +433,35 @@ export default function FallingPillars({ scene, camera }: FallingPillarsProps) {
     // Créer les piliers initiaux
     createInitialPillars();
 
-    // Animation frame function
+    // Animation frame function - modifiée pour supporter WebXR
     let animationFrameId: number;
 
+    // Se connecter à l'animation XR si disponible, sinon utiliser requestAnimationFrame standard
     function animate() {
-      animationFrameId = requestAnimationFrame(animate);
-      animatePillars();
+      if (window.renderer && window.renderer.xr) {
+        // Si renderer.xr existe, s'assurer que notre fonction est appelée lors de l'animation XR
+        window.renderer.xr.addEventListener("sessionstart", () => {
+          console.log("Session XR commencée - animations adaptées");
+          isVRSession = true;
+        });
+
+        window.renderer.xr.addEventListener("sessionend", () => {
+          console.log("Session XR terminée");
+          isVRSession = false;
+        });
+
+        // S'assurer que animatePillars est appelé à chaque frame rendue
+        window.renderer.setAnimationLoop(() => {
+          animatePillars();
+        });
+      } else {
+        // Méthode classique pour l'animation non-VR
+        function animateFrame() {
+          animationFrameId = requestAnimationFrame(animateFrame);
+          animatePillars();
+        }
+        animateFrame();
+      }
     }
 
     // Démarrer l'animation
@@ -403,7 +469,12 @@ export default function FallingPillars({ scene, camera }: FallingPillarsProps) {
 
     // Cleanup à la désinstanciation du composant
     return () => {
-      cancelAnimationFrame(animationFrameId);
+      // Arrêter les animations
+      if (window.renderer && window.renderer.xr) {
+        window.renderer.setAnimationLoop(null);
+      } else {
+        cancelAnimationFrame(animationFrameId);
+      }
 
       // Supprimer les piliers de la scène
       createdPillars.forEach((pillar) => {

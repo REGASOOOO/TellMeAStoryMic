@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import * as THREE from "three";
+import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 
 interface FallingPillarsProps {
   scene: THREE.Scene;
@@ -15,6 +16,7 @@ const WINDOW_SVG_BASE64 =
 export default function FallingPillars({ scene, camera }: FallingPillarsProps) {
   const [pillars, setPillars] = useState<THREE.Group[]>([]);
   const cameraRef = useRef<THREE.Camera | null>(null);
+  const pedestalModelRef = useRef<THREE.Group | null>(null);
 
   useEffect(() => {
     if (!scene) return;
@@ -34,16 +36,48 @@ export default function FallingPillars({ scene, camera }: FallingPillarsProps) {
       });
     }
 
-    // Création des géométries et matériaux pour les piliers avec effet marbre
-    const pillarGeometry = new THREE.CylinderGeometry(0.5, 0.6, 1, 32);
+    // Précharger le modèle OBJ du piédestal romain
+    const objLoader = new OBJLoader();
+    objLoader.load(
+      "/pedestal/roman_pedestal.obj",
+      (object) => {
+        // Appliquer le matériau au modèle
+        object.traverse((child) => {
+          if (child instanceof THREE.Mesh) {
+            child.material = new THREE.MeshPhongMaterial({
+              color: 0xdddddd,
+              specular: 0x111111,
+              shininess: 100,
+            });
+          }
+        });
 
-    // Matériau de base blanc pour simuler le marbre
+        // Ajuster l'échelle et l'orientation si nécessaire
+        object.scale.set(0.1, 0.1, 0.1);
+
+        // Stocker le modèle pour une utilisation ultérieure
+        pedestalModelRef.current = object;
+      },
+      (xhr) => {
+        console.log((xhr.loaded / xhr.total) * 100 + "% loaded");
+      },
+      (error) => {
+        console.error("Error loading OBJ model:", error);
+      }
+    );
+
+    // Création des géométries et matériaux pour les piliers avec effet marbre
+    const pillarGeometry = new THREE.CylinderGeometry(0.3, 0.3, 0.8, 32);
+
+    // Matériau de base blanc pour simuler le marbre (avec transparence)
     const pillarMaterial = new THREE.MeshPhongMaterial({
       color: 0xffffff,
       specular: 0x111111,
       shininess: 100,
       reflectivity: 1,
       emissive: 0x444444,
+      transparent: true,
+      opacity: 1, // On commencera avec une opacité pleine puis on la réduira
     });
 
     // Paramètres d'animation
@@ -57,15 +91,94 @@ export default function FallingPillars({ scene, camera }: FallingPillarsProps) {
       group: THREE.Group;
       pillarIndex: number;
     }[] = [];
+    const placedPedestals: THREE.Group[] = [];
 
-    // Suivre quels piliers ont déjà leurs images créées
+    // Suivre quels piliers ont déjà leurs images créées et lesquels ont été remplacés
     const imageCreated: boolean[] = [];
+    const pedestalPlaced: boolean[] = [];
 
     // Chargeur de textures pour les images
     const textureLoader = new THREE.TextureLoader();
 
     // Tableau des images en base64 au lieu des chemins
     const imageBase64Sources = [GLOBE_SVG_BASE64, WINDOW_SVG_BASE64];
+
+    // Fonction pour placer le modèle 3D OBJ à l'endroit du pilier et rendre le pilier transparent
+    function placeObjectAndFadePillar(pillarIndex: number) {
+      // Vérifier si un piédestal a déjà été placé pour ce pilier
+      if (pedestalPlaced[pillarIndex]) return;
+
+      // Vérifier si le modèle est chargé
+      if (!pedestalModelRef.current) {
+        console.warn("Modèle de piédestal non chargé");
+        return;
+      }
+
+      const pillarGroup = createdPillars[pillarIndex];
+
+      // Cloner le modèle OBJ pour chaque pilier
+      const pedestalModel = pedestalModelRef.current.clone();
+
+      // Réduire l'échelle du piédestal - il est trop grand
+      pedestalModel.scale.set(0.02, 0.02, 0.02); // Réduction significative de l'échelle
+
+      // Copier exactement la position X et Z du pilier, mais fixer Y à -20 (sol)
+      const pillarPosition = pillarGroup.position.clone();
+      pedestalModel.position.set(
+        pillarPosition.x - 0.1,
+        -0.5, // Position Y au niveau du sol
+        pillarPosition.z - 0.1
+      );
+
+      // Copier exactement la rotation du pilier
+      pedestalModel.rotation.copy(pillarGroup.rotation);
+
+      // Pour le debugging
+      console.log(
+        `Pilier position: ${pillarPosition.x}, ${pillarPosition.y}, ${pillarPosition.z}`
+      );
+      console.log(
+        `Piédestal placé à: ${pedestalModel.position.x}, ${pedestalModel.position.y}, ${pedestalModel.position.z}`
+      );
+
+      // Ajouter à la scène
+      scene.add(pedestalModel);
+      placedPedestals.push(pedestalModel);
+
+      // Rendre le pilier existant transparent progressivement
+      const pillarMesh = pillarGroup.children.find(
+        (child) => child instanceof THREE.Mesh
+      ) as THREE.Mesh;
+      if (
+        pillarMesh &&
+        pillarMesh.material instanceof THREE.MeshPhongMaterial
+      ) {
+        // Animation de fade out sur 1 seconde
+        // Note: Pour rendre le piédestal plus petit, il faut modifier l'échelle ailleurs
+        const startTime = Date.now();
+        const duration = 1000; // ms
+        const fadeOut = () => {
+          const elapsed = Date.now() - startTime;
+          const progress = Math.min(elapsed / duration, 1);
+
+          // Réduire l'opacité progressivement
+          (pillarMesh.material as THREE.MeshPhongMaterial).opacity =
+            1 - progress;
+
+          if (progress < 1) {
+            requestAnimationFrame(fadeOut);
+          } else {
+            // Complètement transparent, on peut cacher le pilier
+            pillarMesh.visible = false;
+          }
+        };
+
+        fadeOut();
+      }
+
+      // Marquer ce pilier comme traité
+      pedestalPlaced[pillarIndex] = true;
+    }
 
     // Création des piliers initiaux
     function createInitialPillars() {
@@ -78,7 +191,7 @@ export default function FallingPillars({ scene, camera }: FallingPillarsProps) {
         const x = radius * Math.cos(angle);
         const z = radius * Math.sin(angle);
 
-        const pillar = new THREE.Mesh(pillarGeometry, pillarMaterial);
+        const pillar = new THREE.Mesh(pillarGeometry, pillarMaterial.clone()); // Clone du matériau pour chaque pilier
         const pillarGroup = new THREE.Group();
         pillarGroup.add(pillar);
 
@@ -114,8 +227,9 @@ export default function FallingPillars({ scene, camera }: FallingPillarsProps) {
         // Stocker l'index du pilier pour référence future
         pillarGroup.userData.pillarIndex = i;
 
-        // Initialiser le tracking des images créées
+        // Initialiser le tracking des images créées et des piédestaux placés
         imageCreated[i] = false;
+        pedestalPlaced[i] = false;
       }
 
       setPillars(createdPillars);
@@ -153,11 +267,11 @@ export default function FallingPillars({ scene, camera }: FallingPillarsProps) {
           const imageMesh = new THREE.Mesh(imageGeometry, imageMaterial);
           imageGroup.add(imageMesh);
 
-          // Positionner l'image juste au-dessus du pilier tombé
+          // Positionner l'image juste au-dessus du piédestal
           imageGroup.position.set(
-            pillar.position.x,
-            -18, // Position ajustée au-dessus du pilier tombé (qui est à -20)
-            pillar.position.z
+            pillar.position.x - 0.1, // Aligner avec le piédestal qui a un offset
+            1.5, // Position Y juste au-dessus du piédestal (qui est à -0.5)
+            pillar.position.z - 0.1 // Aligner avec le piédestal qui a un offset
           );
 
           // Ajouter un halo lumineux autour de l'image
@@ -228,9 +342,11 @@ export default function FallingPillars({ scene, camera }: FallingPillarsProps) {
               }
             }
           }
+
           setTimeout(() => {
+            placeObjectAndFadePillar(index);
             createImageAbovePillar(index);
-          }, 1000); // Délai avant de créer l'image
+          }, 500); // Délai avant de créer l'image
         }
       });
 
@@ -245,8 +361,13 @@ export default function FallingPillars({ scene, camera }: FallingPillarsProps) {
           // Faire en sorte que l'image regarde toujours la caméra
           imageData.group.lookAt(cameraPosition);
 
-          // Légère animation de flottement
-          imageData.group.position.y = 2 + Math.sin(currentTime * 0.001) * 0.2;
+          // Légère animation de flottement - ajustée pour la nouvelle position Y de base
+          const pillarIndex = imageData.pillarIndex;
+          const pillar = createdPillars[pillarIndex];
+
+          // Animation de flottement au-dessus du piédestal
+          imageData.group.position.y =
+            1.5 + Math.sin(currentTime * 0.001) * 0.2;
 
           // Effet de pulsation pour le halo
           if (imageData.mesh.children.length > 0) {
@@ -294,6 +415,11 @@ export default function FallingPillars({ scene, camera }: FallingPillarsProps) {
         if (imageData.group) {
           scene.remove(imageData.group);
         }
+      });
+
+      // Supprimer les piédestaux placés
+      placedPedestals.forEach((pedestal) => {
+        scene.remove(pedestal);
       });
 
       // Supprimer la lumière ambiante

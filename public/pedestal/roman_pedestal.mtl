@@ -1,0 +1,12 @@
+# Blender3D MTL File: roman_pedestal.blend
+# Material Count: 1
+newmtl Stone
+Ns 7.843137
+Ka 0.000000 0.000000 0.000000
+Kd 0.640000 0.640000 0.640000
+Ks 0.125000 0.125000 0.125000
+Ni 1.000000
+d 1.000000
+illum 2
+
+

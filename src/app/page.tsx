@@ -4,8 +4,11 @@ import React, { useState, useEffect, useRef } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { VRButton } from "three/examples/jsm/webxr/VRButton.js";
-import FallingPillars from "./components/FallingPillars";
-import { fetchTestHistory } from "./utils/testHistory";
+import FallingPillars, {
+  updatePillarsImages,
+} from "./components/FallingPillars";
+import { testHistory } from "./utils/const";
+import { generateRomanStory } from "./utils/generateStory";
 
 const SCENES = [
   {
@@ -51,24 +54,39 @@ export default function Home() {
   const [storySubmitted, setStorySubmitted] = useState(false);
   // Add a state to control video autoplay
   const [autoplayEnabled, setAutoplayEnabled] = useState(false);
+  const [storyPrompt, setStoryPrompt] = useState<string>("");
+
+  // Define the type for history data
+  type HistoryData = {
+    chapters?: Array<{
+      images?: Array<string | undefined>;
+      [key: string]: any;
+    }>;
+    [key: string]: any;
+  };
 
   // State to store the test history
-  const [testHistory, setTestHistory] = useState<any[]>([]);
+  const [history, setHistory] = useState<HistoryData>();
+  const [currentChapterIndex, setCurrentChapterIndex] = useState(0);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   // Fetch the test history when component mounts or story is submitted
-  useEffect(() => {
-    if (storySubmitted) {
-      fetchTestHistory()
-        .then((data) => setTestHistory(Array.isArray(data) ? data : [data]))
-        .catch((error) => console.error("Error fetching test history:", error));
-    }
-  }, [storySubmitted]);
 
-  const handleStorySubmit = (e: React.FormEvent) => {
+  const handleStorySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setStorySubmitted(true);
-    // Optional: Enable autoplay only after story is submitted if that's the desired behavior
-    setAutoplayEnabled(true);
+    let block = false;
+    if (block) return;
+    block = true;
+
+    try {
+      console.log("Generating story with prompt:", storyPrompt);
+      const storyData = await generateRomanStory(storyPrompt);
+      setHistory(storyData);
+      setStorySubmitted(true);
+      setAutoplayEnabled(true);
+    } catch (error) {
+      console.error("Error generating story:", error);
+    }
   };
 
   function cleanUpScene(scene: THREE.Scene) {
@@ -105,6 +123,7 @@ export default function Home() {
     });
   }
 
+  // Modifier la fonction changeScene pour éviter les interruptions de lecture
   const changeScene = (sceneId: number) => {
     const sceneData = SCENES.find((scene) => scene.id === sceneId);
     if (!sceneData) return;
@@ -114,21 +133,104 @@ export default function Home() {
     setEndTime(sceneData.defaultEndTime);
 
     if (videoRef.current) {
-      videoRef.current.src = sceneData.videoSrc;
-      videoRef.current.currentTime = sceneData.defaultStartTime;
-
-      // Only play the video if autoplay is enabled
-      if (autoplayEnabled) {
-        videoRef.current.play().catch((err) => {
-          console.log(
-            "Auto-play prevented after scene change. Click to play the video."
-          );
-        });
+      // Vérifier que la source vidéo existe avant de l'assigner
+      if (!sceneData.videoSrc) {
+        console.error(`Scene ${sceneId} has no valid videoSrc`);
+        return;
       }
+
+      // Vérifier que le fichier est accessible
+      const videoPath = sceneData.videoSrc;
+      console.log(`Changing to scene ${sceneId} with video source:`, videoPath);
+
+      // Créer un nouvel élément vidéo pour éviter les conflits
+      const newVideo = document.createElement("video");
+
+      // Vérifier si le fichier existe avant de l'assigner
+      fetch(videoPath)
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error(`Video file not found: ${videoPath}`);
+          }
+          return response;
+        })
+        .then(() => {
+          // Le fichier existe, on peut l'assigner
+          newVideo.src = videoPath;
+          newVideo.crossOrigin = "anonymous";
+          newVideo.loop = false;
+          newVideo.muted = true;
+          newVideo.playsInline = true;
+
+          // Ajouter l'écouteur d'événements avant de charger
+          newVideo.addEventListener("timeupdate", () => {
+            if (newVideo.currentTime >= endTime) {
+              newVideo.currentTime = startTime;
+            }
+          });
+
+          // Charger la vidéo
+          newVideo.load();
+          newVideo.currentTime = sceneData.defaultStartTime;
+
+          // Remplacer l'ancienne vidéo par la nouvelle
+          videoRef.current = newVideo;
+
+          // Attendre que la vidéo soit prête puis la lire
+          if (autoplayEnabled) {
+            const playPromise = newVideo.play();
+            if (playPromise !== undefined) {
+              playPromise
+                .then(() => {
+                  console.log(
+                    `Video for scene ${sceneId} playing successfully`
+                  );
+
+                  // Mettre à jour la texture vidéo
+                  if (videoTextureRef.current) {
+                    videoTextureRef.current.source = new THREE.VideoTexture(
+                      newVideo
+                    ).source;
+                    videoTextureRef.current.needsUpdate = true;
+                  } else {
+                    // Créer une nouvelle texture si nécessaire
+                    const videoTexture = new THREE.VideoTexture(newVideo);
+                    videoTexture.minFilter = THREE.LinearFilter;
+                    videoTexture.magFilter = THREE.LinearFilter;
+                    videoTexture.format = THREE.RGBAFormat;
+                    videoTexture.mapping =
+                      THREE.EquirectangularReflectionMapping;
+                    videoTextureRef.current = videoTexture;
+
+                    // Mettre à jour le matériau de la sphère
+                    if (
+                      sphereRef.current &&
+                      sphereRef.current.material instanceof
+                        THREE.MeshBasicMaterial
+                    ) {
+                      sphereRef.current.material.map = videoTexture;
+                      sphereRef.current.material.needsUpdate = true;
+                    }
+                  }
+                })
+                .catch((err) => {
+                  console.error("Auto-play prevented after scene change:", err);
+                });
+            }
+          }
+        })
+        .catch((error) => {
+          console.error(error);
+        });
     }
 
+    // Create a new scene and switch to it
     const newScene = new THREE.Scene();
-    switchScene(rendererRef.current!, newScene, cameraRef.current!);
+    if (rendererRef.current && cameraRef.current) {
+      switchScene(rendererRef.current, newScene, cameraRef.current);
+    } else {
+      console.error("Renderer or camera not initialized");
+    }
   };
 
   // Modified to respect the autoplay setting
@@ -200,6 +302,7 @@ export default function Home() {
       opacity: 0.5,
       side: THREE.DoubleSide,
     });
+
     const centerMark = new THREE.Mesh(centerGeometry, centerMaterial);
     centerMark.rotation.x = Math.PI / 2;
     centerMark.position.y = -4.9;
@@ -371,14 +474,186 @@ export default function Home() {
         vrButtonRef.current.remove();
       }
     };
-  }, [activeSceneId, startTime, endTime]);
+  }, [storySubmitted, activeSceneId, startTime, endTime, autoplayEnabled]);
+
+  useEffect(() => {
+    if (
+      !history ||
+      !history.chapters ||
+      currentChapterIndex >= history.chapters.length ||
+      !storySubmitted ||
+      activeSceneId !== 3 ||
+      !sceneRef.current ||
+      !cameraRef.current
+    ) {
+      return;
+    }
+
+    console.log(`Starting chapter ${currentChapterIndex}`);
+    const currentChapter = history.chapters[currentChapterIndex];
+
+    // Update pillar images for the current chapter
+    if (sceneRef.current && currentChapter.images) {
+      updatePillarsImages(sceneRef.current, [
+        currentChapter.images[0] || "/default-image1.jpg",
+        currentChapter.images[1] || "/default-image2.jpg",
+      ]);
+    }
+
+    // Create a new audio element instead of reusing the same one
+    if (audioRef.current) {
+      // Remove previous event listeners to prevent duplicates
+      audioRef.current.onended = null;
+      audioRef.current.pause();
+      audioRef.current.src = "";
+    }
+
+    // Create and configure the audio element
+    const audio = new Audio();
+    audio.src = currentChapter.mp3;
+
+    // Wait for audio to be loaded before playing
+    audio.onloadeddata = () => {
+      console.log(
+        `Audio for chapter ${currentChapterIndex} loaded, playing now`
+      );
+      audio
+        .play()
+        .then(() =>
+          console.log(`Audio playing for chapter ${currentChapterIndex}`)
+        )
+        .catch((err) => console.error("Error playing audio:", err));
+    };
+
+    // Only set up the onended handler after the audio has started playing
+    audio.oncanplaythrough = () => {
+      audio.onended = () => {
+        console.log(
+          `Chapter ${currentChapterIndex} audio ended, moving to next chapter`
+        );
+
+        if (
+          history.chapters &&
+          currentChapterIndex < history.chapters.length - 1
+        ) {
+          setCurrentChapterIndex((prevIndex) => prevIndex + 1);
+        } else {
+          console.log("Last chapter completed");
+        }
+      };
+    };
+
+    // Save reference to the current audio element
+    audioRef.current = audio;
+
+    // Clean up function
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.onended = null;
+        audioRef.current.oncanplaythrough = null;
+        audioRef.current.onloadeddata = null;
+      }
+    };
+  }, [currentChapterIndex, history, storySubmitted, activeSceneId]);
+
+  // Function to modify start and end points
+  const updateVideoSegment = (start: number, end: number) => {
+    setStartTime(start);
+    setEndTime(end);
+    if (videoRef.current) {
+      videoRef.current.currentTime = start;
+    }
+  };
+
+  // Added play/pause controls for the UI
+  const toggleVideoPlayback = () => {
+    if (videoRef.current) {
+      if (videoRef.current.paused) {
+        videoRef.current
+          .play()
+          .then(() => setAutoplayEnabled(true))
+          .catch((err) => console.error("Error playing video:", err));
+      } else {
+        videoRef.current.pause();
+        setAutoplayEnabled(false);
+      }
+    }
+  };
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100vh" }}>
-      <div ref={mountRef} style={{ width: "100%", height: "100%" }}></div>
-      {activeSceneId === 3 && sceneRef.current && cameraRef.current && (
-        <FallingPillars scene={sceneRef.current} camera={cameraRef.current} />
+      {!storySubmitted ? (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "center",
+            alignItems: "center",
+            height: "100vh",
+            backgroundColor: "#f0f0f0",
+          }}
+        >
+          <h1 style={{ fontSize: "2.5rem", marginBottom: "20px" }}>
+            Quel histoire vous voulez connaitre ?
+          </h1>
+          <form
+            onSubmit={handleStorySubmit}
+            style={{ width: "100%", maxWidth: "600px" }}
+          >
+            <input
+              type="text"
+              placeholder="Entrez votre histoire ici..."
+              value={storyPrompt}
+              onChange={(e) => setStoryPrompt(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "15px",
+                fontSize: "1.2rem",
+                borderRadius: "8px",
+                border: "1px solid #ccc",
+                marginBottom: "20px",
+              }}
+              required
+            />
+            <button
+              type="submit"
+              style={{
+                width: "100%",
+                padding: "15px",
+                fontSize: "1.2rem",
+                borderRadius: "8px",
+                border: "none",
+                backgroundColor: "#007BFF",
+                color: "white",
+                cursor: "pointer",
+              }}
+            >
+              Soumettre
+            </button>
+          </form>
+        </div>
+      ) : (
+        <div ref={mountRef} style={{ width: "100%", height: "100%" }}></div>
       )}
+      {storySubmitted &&
+        activeSceneId === 3 &&
+        sceneRef.current &&
+        cameraRef.current && (
+          <FallingPillars
+            scene={sceneRef.current}
+            camera={cameraRef.current}
+            image1={
+              history?.chapters?.[currentChapterIndex]?.images?.[0] ||
+              "/default-image1.jpg"
+            }
+            image2={
+              history?.chapters?.[currentChapterIndex]?.images?.[1] ||
+              "/default-image2.jpg"
+            }
+          />
+        )}
+      <audio ref={audioRef} style={{ display: "none" }} />
     </div>
   );
 }

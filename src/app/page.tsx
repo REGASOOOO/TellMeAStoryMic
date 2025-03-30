@@ -127,7 +127,6 @@ export default function Home() {
       }
     }
 
-    // Create a new scene and switch to it
     const newScene = new THREE.Scene();
     switchScene(rendererRef.current!, newScene, cameraRef.current!);
   };
@@ -201,7 +200,6 @@ export default function Home() {
       opacity: 0.5,
       side: THREE.DoubleSide,
     });
-
     const centerMark = new THREE.Mesh(centerGeometry, centerMaterial);
     centerMark.rotation.x = Math.PI / 2;
     centerMark.position.y = -4.9;
@@ -373,131 +371,14 @@ export default function Home() {
         vrButtonRef.current.remove();
       }
     };
-  }, [storySubmitted, activeSceneId, startTime, endTime, autoplayEnabled]);
-
-  // Function to modify start and end points
-  const updateVideoSegment = (start: number, end: number) => {
-    setStartTime(start);
-    setEndTime(end);
-    if (videoRef.current) {
-      videoRef.current.currentTime = start;
-    }
-  };
-
-  // Added play/pause controls for the UI
-  const toggleVideoPlayback = () => {
-    if (videoRef.current) {
-      if (videoRef.current.paused) {
-        videoRef.current
-          .play()
-          .then(() => setAutoplayEnabled(true))
-          .catch((err) => console.error("Error playing video:", err));
-      } else {
-        videoRef.current.pause();
-        setAutoplayEnabled(false);
-      }
-    }
-  };
+  }, [activeSceneId, startTime, endTime]);
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100vh" }}>
-      {!storySubmitted ? (
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            justifyContent: "center",
-            alignItems: "center",
-            height: "100vh",
-            backgroundColor: "#f0f0f0",
-          }}
-        >
-          <h1 style={{ fontSize: "2.5rem", marginBottom: "20px" }}>
-            Quel histoire vous voulez connaitre ?
-          </h1>
-          <form
-            onSubmit={handleStorySubmit}
-            style={{ width: "100%", maxWidth: "600px" }}
-          >
-            <input
-              type="text"
-              placeholder="Entrez votre histoire ici..."
-              style={{
-                width: "100%",
-                padding: "15px",
-                fontSize: "1.2rem",
-                borderRadius: "8px",
-                border: "1px solid #ccc",
-                marginBottom: "20px",
-              }}
-            />
-            <button
-              type="submit"
-              style={{
-                width: "100%",
-                padding: "15px",
-                fontSize: "1.2rem",
-                borderRadius: "8px",
-                border: "none",
-                backgroundColor: "#007BFF",
-                color: "white",
-                cursor: "pointer",
-              }}
-            >
-              Soumettre
-            </button>
-          </form>
-        </div>
-      ) : (
-        <div ref={mountRef} style={{ width: "100%", height: "100%" }}></div>
+      <div ref={mountRef} style={{ width: "100%", height: "100%" }}></div>
+      {activeSceneId === 3 && sceneRef.current && cameraRef.current && (
+        <FallingPillars scene={sceneRef.current} camera={cameraRef.current} />
       )}
-      {storySubmitted &&
-        activeSceneId === 3 &&
-        sceneRef.current &&
-        cameraRef.current && (
-          <FallingPillars scene={sceneRef.current} camera={cameraRef.current} />
-        )}
-      <div
-        style={{
-          position: "absolute",
-          bottom: "20px",
-          left: "20px",
-          backgroundColor: "rgba(0,0,0,0.7)",
-          color: "white",
-          padding: "10px",
-          borderRadius: "5px",
-          maxHeight: "200px",
-          overflowY: "auto",
-          width: "300px",
-        }}
-      >
-        {testHistory.length > 0 ? (
-          testHistory.map((history, index) => (
-            <div
-              key={index}
-              style={{
-                marginBottom: "10px",
-                padding: "8px",
-                borderBottom: "1px solid rgba(255,255,255,0.3)",
-              }}
-            >
-              <h4 style={{ margin: "0 0 5px 0" }}>
-                {history.title || `Story ${index + 1}`}
-              </h4>
-              <p style={{ margin: "0", fontSize: "14px" }}>
-                {history.description || history.text || JSON.stringify(history)}
-              </p>
-              {history.timestamp && (
-                <span style={{ fontSize: "12px", opacity: "0.7" }}>
-                  {new Date(history.timestamp).toLocaleString()}
-                </span>
-              )}
-            </div>
-          ))
-        ) : (
-          <p>No history data available</p>
-        )}
-      </div>
     </div>
   );
 }

@@ -55,6 +55,12 @@ export default function Home() {
   const [autoplayEnabled, setAutoplayEnabled] = useState(false);
   const [storyPrompt, setStoryPrompt] = useState<string>("");
   const [transitioning, setTransitioning] = useState(false);
+  const [loadingText, setLoadingText] = useState("Tell me a story ...");
+  const [titleFading, setTitleFading] = useState(false);
+  const [glowActive, setGlowActive] = useState(false);
+
+  const [preloadedVideos, setPreloadedVideos] = useState<Map<number, HTMLVideoElement>>(new Map());
+  const initialVideoRef = useRef<HTMLVideoElement | null>(null);
 
   type HistoryData = {
     chapters?: Array<{
@@ -68,19 +74,73 @@ export default function Home() {
   const [currentChapterIndex, setCurrentChapterIndex] = useState(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
+  useEffect(() => {
+    const preloadFirstVideo = async () => {
+      try {
+        const firstScene = SCENES[0];
+        if (!firstScene) return;
+
+        const video = document.createElement("video");
+        video.crossOrigin = "anonymous";
+        video.muted = true;
+        video.playsInline = true;
+        video.loop = true;
+
+        video.src = firstScene.videoSrc;
+        video.currentTime = firstScene.defaultStartTime;
+
+        video.load();
+
+        initialVideoRef.current = video;
+
+        const videoMap = new Map();
+        videoMap.set(firstScene.id, video);
+        setPreloadedVideos(videoMap);
+
+        console.log("Initial video preloaded");
+      } catch (error) {
+        console.error("Error preloading video:", error);
+      }
+    };
+
+    preloadFirstVideo();
+  }, []);
+
   const handleStorySubmitEnhanced = async (e: React.FormEvent) => {
     e.preventDefault();
-    setTransitioning(true);
-    setTimeout(async () => {
-      try {
-        console.log("Generating story with prompt:", storyPrompt);
-        setHistory(testHistory);
-        setStorySubmitted(true);
-        setAutoplayEnabled(true);
-      } catch (error) {
-        console.error("Error generating story:", error);
-      }
-    }, 800);
+
+    setTitleFading(true);
+
+    if (initialVideoRef.current) {
+      initialVideoRef.current.play()
+        .catch(err => console.error("Error playing preloaded video:", err));
+    }
+
+    setTimeout(() => {
+      setLoadingText(
+        "Hold on… your story is taking shape in the sands of history…"
+      );
+      setTitleFading(false);
+
+      setTimeout(() => {
+        setGlowActive(true);
+
+        setTimeout(() => {
+          setTransitioning(true);
+
+          setTimeout(async () => {
+            try {
+              console.log("Generating story with prompt:", storyPrompt);
+              setHistory(testHistory);
+              setStorySubmitted(true);
+              setAutoplayEnabled(true);
+            } catch (error) {
+              console.error("Error generating story:", error);
+            }
+          }, 1000);
+        }, 3500);
+      }, 200);
+    }, 500);
   };
 
   function cleanUpScene(scene: THREE.Scene) {
@@ -212,6 +272,9 @@ export default function Home() {
 
   useEffect(() => {
     if (activeSceneId === 1 && !isTransitioning && autoplayEnabled) {
+      const sceneOneDuration = (SCENES[0].duration ?? 5) * 1000;
+      const transitionStartTime = sceneOneDuration - 200;
+
       const transitionTimeout = setTimeout(() => {
         setIsTransitioning(true);
         changeScene(2);
@@ -220,7 +283,8 @@ export default function Home() {
           changeScene(3);
           setIsTransitioning(false);
         }, (SCENES[1].duration ?? 5) * 1000);
-      }, (SCENES[0].duration ?? 5) * 1000);
+      }, transitionStartTime);
+
       return () => clearTimeout(transitionTimeout);
     }
   }, [activeSceneId, isTransitioning, autoplayEnabled]);
@@ -314,15 +378,23 @@ export default function Home() {
     );
     scene.add(circleHelper);
 
-    const video = document.createElement("video");
-    videoRef.current = video;
+    let video: HTMLVideoElement;
+    if (initialVideoRef.current) {
+      video = initialVideoRef.current;
+      console.log("Using preloaded video that's already playing");
+    } else {
+      video = document.createElement("video");
+      const activeScene = SCENES.find((scene) => scene.id === activeSceneId);
+      video.src = activeScene?.videoSrc || SCENES[0].videoSrc;
+      video.crossOrigin = "anonymous";
+      video.loop = false;
+      video.muted = true;
+      video.playsInline = true;
+      video.currentTime = startTime;
+      console.log("Created new video element");
+    }
 
-    const activeScene = SCENES.find((scene) => scene.id === activeSceneId);
-    video.src = activeScene?.videoSrc || SCENES[0].videoSrc;
-    video.crossOrigin = "anonymous";
-    video.loop = false;
-    video.muted = true;
-    video.playsInline = true;
+    videoRef.current = video;
 
     video.addEventListener("timeupdate", () => {
       if (video.currentTime >= endTime) {
@@ -359,43 +431,30 @@ export default function Home() {
       return `${mins}:${secs.toString().padStart(2, "0")}`;
     };
 
-    document.addEventListener("click", () => {
-      if (video.paused) {
-        video.currentTime = startTime;
+    if (!initialVideoRef.current) {
+      if (autoplayEnabled) {
         video
           .play()
-          .then(() => {
-            console.log("Video playing");
-            setAutoplayEnabled(true);
-            if (videoTimeIntervalRef.current)
-              clearInterval(videoTimeIntervalRef.current);
-            videoTimeIntervalRef.current = window.setInterval(() => {
-              setVideoTime(formatTime(video.currentTime));
-            }, 1000);
+          .catch((err) => {
+            console.log("Auto-play prevented. Click to play the video.");
           })
-          .catch((err) => console.error("Error playing video:", err));
+          .then(() => {
+            if (video.played.length > 0) {
+              if (videoTimeIntervalRef.current)
+                clearInterval(videoTimeIntervalRef.current);
+              videoTimeIntervalRef.current = window.setInterval(() => {
+                setVideoTime(formatTime(video.currentTime));
+              }, 1000);
+            }
+          });
+      } else {
+        console.log("Video autoplay disabled. Click to play.");
       }
-    });
-
-    video.currentTime = startTime;
-
-    if (autoplayEnabled) {
-      video
-        .play()
-        .catch((err) => {
-          console.log("Auto-play prevented. Click to play the video.");
-        })
-        .then(() => {
-          if (video.played.length > 0) {
-            if (videoTimeIntervalRef.current)
-              clearInterval(videoTimeIntervalRef.current);
-            videoTimeIntervalRef.current = window.setInterval(() => {
-              setVideoTime(formatTime(video.currentTime));
-            }, 1000);
-          }
-        });
     } else {
-      console.log("Video autoplay disabled. Click to play.");
+      if (videoTimeIntervalRef.current) clearInterval(videoTimeIntervalRef.current);
+      videoTimeIntervalRef.current = window.setInterval(() => {
+        setVideoTime(formatTime(video.currentTime));
+      }, 1000);
     }
 
     function animate() {
@@ -570,6 +629,7 @@ export default function Home() {
             }}
           />
           <h1
+            className={titleFading ? "title-fade-out" : "title-fade-in"}
             style={{
               fontSize: "2.8rem",
               marginBottom: "30px",
@@ -578,13 +638,13 @@ export default function Home() {
               zIndex: 2,
               position: "relative",
               fontFamily: "'Merriweather', serif",
-              animation: "pulse 2s infinite alternate",
             }}
           >
-            Tell me a story ...
+            {loadingText}
           </h1>
           <form
             onSubmit={handleStorySubmitEnhanced}
+            className={glowActive ? "golden-glow" : ""}
             style={{
               width: "100%",
               maxWidth: "600px",
@@ -612,7 +672,7 @@ export default function Home() {
                 backgroundColor: "rgba(255, 255, 255, 0.9)",
                 transition: "transform 0.3s ease, box-shadow 0.3s ease",
                 outline: "none",
-                color: "#000", // force input text to be black
+                color: "#000",
               }}
               onFocus={(e) => {
                 e.currentTarget.style.transform = "scale(1.02)";
@@ -672,7 +732,8 @@ export default function Home() {
               textShadow: "0 0 8px rgba(0,0,0,0.7)",
             }}
           >
-            Plongez dans un voyage immersif dans l'Empire romain dès votre première idée
+            Plongez dans un voyage immersif dans l'Empire romain dès votre
+            première idée
           </p>
           <style
             dangerouslySetInnerHTML={{
@@ -689,18 +750,42 @@ export default function Home() {
                 from { transform: scale(0.98); }
                 to { transform: scale(1.02); }
               }
+              @keyframes glow {
+                0% { box-shadow: 0 0 5px #ffd700; }
+                25% { box-shadow: 0 0 15px #ffd700; }
+                50% { box-shadow: 0 0 25px #ffd700, 0 0 40px #ffd700; }
+                75% { box-shadow: 0 0 15px #ffd700; }
+                100% { box-shadow: 0 0 5px #ffd700; }
+              }
+              .golden-glow {
+                animation: glow 5s ease-in-out infinite;
+                border: 2px solid transparent;
+                border-image: linear-gradient(to right, #ffd700, #e6c200) 1;
+              }
               .fadeIn {
                 animation: fadeIn 0.8s forwards;
               }
               .fadeOut {
-                animation: fadeOut 0.8s forwards;
+                animation: fadeOut 1s forwards;
+              }
+              .title-fade-out {
+                opacity: 0;
+                transition: opacity 0.5s ease-out;
+              }
+              .title-fade-in {
+                opacity: 1;
+                transition: opacity 0.5s ease-in;
               }
             `,
             }}
           />
         </div>
       ) : (
-        <div ref={mountRef} style={{ width: "100%", height: "100%" }} className="fadeIn"></div>
+        <div
+          ref={mountRef}
+          style={{ width: "100%", height: "100%" }}
+          className="fadeIn"
+        ></div>
       )}
       {storySubmitted &&
         activeSceneId === 3 &&

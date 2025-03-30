@@ -1,0 +1,32 @@
+/* Smooth fading for scene transitions */
+.fadeIn {
+  animation: fadeIn 0.8s forwards;
+}
+
+.fadeOut {
+  animation: fadeOut 1s forwards;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+/* Prevent black flash between scenes */
+.no-flash {
+  background-color: black;
+}
+
+/* Ensure the 3D container is initially ready */
+.scene-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+}

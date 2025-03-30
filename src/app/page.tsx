@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { VRButton } from "three/examples/jsm/webxr/VRButton.js";
 import FallingPillars from "./components/FallingPillars";
+import { fetchTestHistory } from "./utils/testHistory";
 
 const SCENES = [
   {
@@ -47,6 +48,28 @@ export default function Home() {
   const vrButtonRef = useRef<HTMLElement | null>(null);
   const videoTimeIntervalRef = useRef<number | null>(null);
   const [isTransitioning, setIsTransitioning] = useState(false);
+  const [storySubmitted, setStorySubmitted] = useState(false);
+  // Add a state to control video autoplay
+  const [autoplayEnabled, setAutoplayEnabled] = useState(false);
+
+  // State to store the test history
+  const [testHistory, setTestHistory] = useState<any[]>([]);
+
+  // Fetch the test history when component mounts or story is submitted
+  useEffect(() => {
+    if (storySubmitted) {
+      fetchTestHistory()
+        .then((data) => setTestHistory(Array.isArray(data) ? data : [data]))
+        .catch((error) => console.error("Error fetching test history:", error));
+    }
+  }, [storySubmitted]);
+
+  const handleStorySubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setStorySubmitted(true);
+    // Optional: Enable autoplay only after story is submitted if that's the desired behavior
+    setAutoplayEnabled(true);
+  };
 
   function cleanUpScene(scene: THREE.Scene) {
     scene.traverse((object) => {
@@ -93,11 +116,15 @@ export default function Home() {
     if (videoRef.current) {
       videoRef.current.src = sceneData.videoSrc;
       videoRef.current.currentTime = sceneData.defaultStartTime;
-      videoRef.current.play().catch((err) => {
-        console.log(
-          "Auto-play prevented after scene change. Click to play the video."
-        );
-      });
+
+      // Only play the video if autoplay is enabled
+      if (autoplayEnabled) {
+        videoRef.current.play().catch((err) => {
+          console.log(
+            "Auto-play prevented after scene change. Click to play the video."
+          );
+        });
+      }
     }
 
     // Create a new scene and switch to it
@@ -105,8 +132,9 @@ export default function Home() {
     switchScene(rendererRef.current!, newScene, cameraRef.current!);
   };
 
+  // Modified to respect the autoplay setting
   useEffect(() => {
-    if (activeSceneId === 1 && !isTransitioning) {
+    if (activeSceneId === 1 && !isTransitioning && autoplayEnabled) {
       const transitionTimeout = setTimeout(() => {
         setIsTransitioning(true);
         changeScene(2);
@@ -118,9 +146,11 @@ export default function Home() {
       }, (SCENES[0].duration ?? 5) * 1000);
       return () => clearTimeout(transitionTimeout);
     }
-  }, [activeSceneId, isTransitioning]);
+  }, [activeSceneId, isTransitioning, autoplayEnabled]);
 
   useEffect(() => {
+    if (!storySubmitted) return;
+
     if (!mountRef.current) return;
     const scene = new THREE.Scene();
     sceneRef.current = scene;
@@ -141,12 +171,10 @@ export default function Home() {
 
     mountRef.current.appendChild(renderer.domElement);
 
-    // Ajouter le bouton VR
     const vrButton = VRButton.createButton(renderer);
     vrButtonRef.current = vrButton;
     document.body.appendChild(vrButton);
 
-    // Contrôles pour la caméra
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
@@ -154,7 +182,6 @@ export default function Home() {
     controls.minDistance = 1;
     controls.maxDistance = 40;
 
-    // Créer le sol et les éléments visuels (identique à votre code existant)
     const groundGeometry = new THREE.CircleGeometry(20, 32);
     const groundMaterial = new THREE.MeshBasicMaterial({
       color: 0xffffff,
@@ -210,11 +237,9 @@ export default function Home() {
     );
     scene.add(circleHelper);
 
-    // Créer l'élément vidéo
     const video = document.createElement("video");
     videoRef.current = video;
 
-    // Utiliser la source de la scène active
     const activeScene = SCENES.find((scene) => scene.id === activeSceneId);
     video.src = activeScene?.videoSrc || SCENES[0].videoSrc;
     video.crossOrigin = "anonymous";
@@ -222,14 +247,12 @@ export default function Home() {
     video.muted = true;
     video.playsInline = true;
 
-    // Gestion de la boucle vidéo
     video.addEventListener("timeupdate", () => {
       if (video.currentTime >= endTime) {
         video.currentTime = startTime;
       }
     });
 
-    // Créer la texture vidéo
     const videoTexture = new THREE.VideoTexture(video);
     videoTextureRef.current = videoTexture;
     videoTexture.minFilter = THREE.LinearFilter;
@@ -237,7 +260,6 @@ export default function Home() {
     videoTexture.format = THREE.RGBAFormat;
     videoTexture.mapping = THREE.EquirectangularReflectionMapping;
 
-    // Créer la sphère pour afficher la vidéo 360
     const sphereGeometry = new THREE.SphereGeometry(500, 60, 40);
     sphereGeometry.scale(-1, 1, 1);
 
@@ -249,20 +271,18 @@ export default function Home() {
     sphereRef.current = sphere;
     scene.add(sphere);
 
-    // Ajouter une lumière pour voir les modèles 3D
     const light = new THREE.DirectionalLight(0xffffff, 1);
     light.position.set(0, 10, 0);
     scene.add(light);
     scene.add(new THREE.AmbientLight(0x404040));
 
-    // Function to format time as mm:ss
     const formatTime = (seconds: number) => {
       const mins = Math.floor(seconds / 60);
       const secs = Math.floor(seconds % 60);
       return `${mins}:${secs.toString().padStart(2, "0")}`;
     };
 
-    // Démarrer la lecture vidéo sur interaction
+    // Modified click handler to toggle video playback
     document.addEventListener("click", () => {
       if (video.paused) {
         video.currentTime = startTime;
@@ -270,6 +290,7 @@ export default function Home() {
           .play()
           .then(() => {
             console.log("Video playing");
+            setAutoplayEnabled(true); // Enable autoplay when user explicitly plays video
             if (videoTimeIntervalRef.current)
               clearInterval(videoTimeIntervalRef.current);
             videoTimeIntervalRef.current = window.setInterval(() => {
@@ -277,30 +298,42 @@ export default function Home() {
             }, 1000);
           })
           .catch((err) => console.error("Error playing video:", err));
+      } else {
+        // Optional: Allow pausing by clicking again
+        // video.pause();
+        // setAutoplayEnabled(false);
       }
     });
 
-    // Tentative d'auto-play
+    // Set initial video time without auto-playing
     video.currentTime = startTime;
-    video
-      .play()
-      .catch((err) => {
-        console.log("Auto-play prevented. Click to play the video.");
-      })
-      .then(() => {
-        if (videoTimeIntervalRef.current)
-          clearInterval(videoTimeIntervalRef.current);
-        videoTimeIntervalRef.current = window.setInterval(() => {
-          setVideoTime(formatTime(video.currentTime));
-        }, 1000);
-      });
 
-    // Boucle d'animation
+    // Only attempt to play if autoplay is enabled
+    if (autoplayEnabled) {
+      video
+        .play()
+        .catch((err) => {
+          console.log("Auto-play prevented. Click to play the video.");
+        })
+        .then(() => {
+          if (video.played.length > 0) {
+            // Only set up interval if video actually played
+            if (videoTimeIntervalRef.current)
+              clearInterval(videoTimeIntervalRef.current);
+            videoTimeIntervalRef.current = window.setInterval(() => {
+              setVideoTime(formatTime(video.currentTime));
+            }, 1000);
+          }
+        });
+    } else {
+      // Just display the first frame without playing
+      console.log("Video autoplay disabled. Click to play.");
+    }
+
     function animate() {
       if (!renderer.xr.isPresenting) {
         controls.update();
       }
-      // Exécuter toutes les fonctions d'animation enregistrées
       if (scene.userData.animationFunctions) {
         scene.userData.animationFunctions.forEach((fn: Function) => fn());
       }
@@ -312,7 +345,6 @@ export default function Home() {
 
     renderer.setAnimationLoop(animate);
 
-    // Gestion du redimensionnement
     const handleResize = () => {
       const width = window.innerWidth;
       const height = window.innerHeight;
@@ -324,7 +356,6 @@ export default function Home() {
 
     window.addEventListener("resize", handleResize);
 
-    // Nettoyage
     return () => {
       window.removeEventListener("resize", handleResize);
       if (mountRef.current && renderer.domElement) {
@@ -342,9 +373,9 @@ export default function Home() {
         vrButtonRef.current.remove();
       }
     };
-  }, [activeSceneId, startTime, endTime]); // Ajouter activeSceneId comme dépendance
+  }, [storySubmitted, activeSceneId, startTime, endTime, autoplayEnabled]);
 
-  // Fonction pour modifier les points de début et de fin
+  // Function to modify start and end points
   const updateVideoSegment = (start: number, end: number) => {
     setStartTime(start);
     setEndTime(end);
@@ -353,42 +384,119 @@ export default function Home() {
     }
   };
 
+  // Added play/pause controls for the UI
+  const toggleVideoPlayback = () => {
+    if (videoRef.current) {
+      if (videoRef.current.paused) {
+        videoRef.current
+          .play()
+          .then(() => setAutoplayEnabled(true))
+          .catch((err) => console.error("Error playing video:", err));
+      } else {
+        videoRef.current.pause();
+        setAutoplayEnabled(false);
+      }
+    }
+  };
+
   return (
     <div style={{ position: "relative", width: "100%", height: "100vh" }}>
-      <div ref={mountRef} style={{ width: "100%", height: "100%" }}></div>
-
-      {/* Utilisation du composant FallingPillars avec triggerFall */}
-      {activeSceneId === 3 && sceneRef.current && cameraRef.current && (
-        <FallingPillars scene={sceneRef.current} camera={cameraRef.current} />
-      )}
-
-      <div className="video-timer">{videoTime}</div>
-      <div className="video-controls">
-        <div>
-          <label htmlFor="startTime">Début: </label>
-          <input
-            id="startTime"
-            type="number"
-            min="0"
-            max={endTime - 1}
-            value={startTime}
-            onChange={(e) =>
-              updateVideoSegment(Number(e.target.value), endTime)
-            }
-            className="time-input"
-          />
-          <label htmlFor="endTime">Fin: </label>
-          <input
-            id="endTime"
-            type="number"
-            min={startTime + 1}
-            value={endTime}
-            onChange={(e) =>
-              updateVideoSegment(startTime, Number(e.target.value))
-            }
-            className="time-input"
-          />
+      {!storySubmitted ? (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "center",
+            alignItems: "center",
+            height: "100vh",
+            backgroundColor: "#f0f0f0",
+          }}
+        >
+          <h1 style={{ fontSize: "2.5rem", marginBottom: "20px" }}>
+            Quel histoire vous voulez connaitre ?
+          </h1>
+          <form
+            onSubmit={handleStorySubmit}
+            style={{ width: "100%", maxWidth: "600px" }}
+          >
+            <input
+              type="text"
+              placeholder="Entrez votre histoire ici..."
+              style={{
+                width: "100%",
+                padding: "15px",
+                fontSize: "1.2rem",
+                borderRadius: "8px",
+                border: "1px solid #ccc",
+                marginBottom: "20px",
+              }}
+            />
+            <button
+              type="submit"
+              style={{
+                width: "100%",
+                padding: "15px",
+                fontSize: "1.2rem",
+                borderRadius: "8px",
+                border: "none",
+                backgroundColor: "#007BFF",
+                color: "white",
+                cursor: "pointer",
+              }}
+            >
+              Soumettre
+            </button>
+          </form>
         </div>
+      ) : (
+        <div ref={mountRef} style={{ width: "100%", height: "100%" }}></div>
+      )}
+      {storySubmitted &&
+        activeSceneId === 3 &&
+        sceneRef.current &&
+        cameraRef.current && (
+          <FallingPillars scene={sceneRef.current} camera={cameraRef.current} />
+        )}
+      <div
+        style={{
+          position: "absolute",
+          bottom: "20px",
+          left: "20px",
+          backgroundColor: "rgba(0,0,0,0.7)",
+          color: "white",
+          padding: "10px",
+          borderRadius: "5px",
+          maxHeight: "200px",
+          overflowY: "auto",
+          width: "300px",
+        }}
+      >
+        {testHistory.length > 0 ? (
+          testHistory.map((history, index) => (
+            <div
+              key={index}
+              style={{
+                marginBottom: "10px",
+                padding: "8px",
+                borderBottom: "1px solid rgba(255,255,255,0.3)",
+              }}
+            >
+              <h4 style={{ margin: "0 0 5px 0" }}>
+                {history.title || `Story ${index + 1}`}
+              </h4>
+              <p style={{ margin: "0", fontSize: "14px" }}>
+                {history.description || history.text || JSON.stringify(history)}
+              </p>
+              {history.timestamp && (
+                <span style={{ fontSize: "12px", opacity: "0.7" }}>
+                  {new Date(history.timestamp).toLocaleString()}
+                </span>
+              )}
+            </div>
+          ))
+        ) : (
+          <p>No history data available</p>
+        )}
       </div>
     </div>
   );

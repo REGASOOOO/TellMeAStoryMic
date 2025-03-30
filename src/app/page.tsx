@@ -66,7 +66,7 @@ export default function Home() {
   };
 
   // State to store the test history
-  const [history, setHistory] = useState<HistoryData>();
+  const [history, setHistory] = useState<HistoryData>(testHistory);
   const [currentChapterIndex, setCurrentChapterIndex] = useState(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -79,9 +79,9 @@ export default function Home() {
     block = true;
 
     try {
-      console.log("Generating story with prompt:", storyPrompt);
-      const storyData = await generateRomanStory(storyPrompt);
-      setHistory(storyData);
+      // console.log("Generating story with prompt:", storyPrompt);
+      // const storyData = await generateRomanStory(storyPrompt);
+      // setHistory(storyData);
       setStorySubmitted(true);
       setAutoplayEnabled(true);
     } catch (error) {

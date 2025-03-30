@@ -52,11 +52,10 @@ export default function Home() {
   const videoTimeIntervalRef = useRef<number | null>(null);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [storySubmitted, setStorySubmitted] = useState(false);
-  // Add a state to control video autoplay
   const [autoplayEnabled, setAutoplayEnabled] = useState(false);
   const [storyPrompt, setStoryPrompt] = useState<string>("");
+  const [transitioning, setTransitioning] = useState(false);
 
-  // Define the type for history data
   type HistoryData = {
     chapters?: Array<{
       images?: Array<string | undefined>;
@@ -65,28 +64,23 @@ export default function Home() {
     [key: string]: any;
   };
 
-  // State to store the test history
   const [history, setHistory] = useState<HistoryData>();
   const [currentChapterIndex, setCurrentChapterIndex] = useState(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  // Fetch the test history when component mounts or story is submitted
-
-  const handleStorySubmit = async (e: React.FormEvent) => {
+  const handleStorySubmitEnhanced = async (e: React.FormEvent) => {
     e.preventDefault();
-    let block = false;
-    if (block) return;
-    block = true;
-
-    try {
-      console.log("Generating story with prompt:", storyPrompt);
-      const storyData = await generateRomanStory(storyPrompt);
-      setHistory(storyData);
-      setStorySubmitted(true);
-      setAutoplayEnabled(true);
-    } catch (error) {
-      console.error("Error generating story:", error);
-    }
+    setTransitioning(true);
+    setTimeout(async () => {
+      try {
+        console.log("Generating story with prompt:", storyPrompt);
+        setHistory(testHistory);
+        setStorySubmitted(true);
+        setAutoplayEnabled(true);
+      } catch (error) {
+        console.error("Error generating story:", error);
+      }
+    }, 800);
   };
 
   function cleanUpScene(scene: THREE.Scene) {
@@ -109,21 +103,17 @@ export default function Home() {
     newScene: THREE.Scene,
     camera: THREE.Camera
   ) {
-    // Clean up the current scene
     if (renderer.xr.isPresenting && sceneRef.current) {
       cleanUpScene(sceneRef.current);
     }
 
-    // Set the new scene
     sceneRef.current = newScene;
 
-    // Set the new animation loop
     renderer.setAnimationLoop(() => {
       renderer.render(newScene, camera);
     });
   }
 
-  // Modifier la fonction changeScene pour éviter les interruptions de lecture
   const changeScene = (sceneId: number) => {
     const sceneData = SCENES.find((scene) => scene.id === sceneId);
     if (!sceneData) return;
@@ -133,20 +123,16 @@ export default function Home() {
     setEndTime(sceneData.defaultEndTime);
 
     if (videoRef.current) {
-      // Vérifier que la source vidéo existe avant de l'assigner
       if (!sceneData.videoSrc) {
         console.error(`Scene ${sceneId} has no valid videoSrc`);
         return;
       }
 
-      // Vérifier que le fichier est accessible
       const videoPath = sceneData.videoSrc;
       console.log(`Changing to scene ${sceneId} with video source:`, videoPath);
 
-      // Créer un nouvel élément vidéo pour éviter les conflits
       const newVideo = document.createElement("video");
 
-      // Vérifier si le fichier existe avant de l'assigner
       fetch(videoPath)
         .then((response) => {
           if (!response.ok) {
@@ -155,28 +141,23 @@ export default function Home() {
           return response;
         })
         .then(() => {
-          // Le fichier existe, on peut l'assigner
           newVideo.src = videoPath;
           newVideo.crossOrigin = "anonymous";
           newVideo.loop = false;
           newVideo.muted = true;
           newVideo.playsInline = true;
 
-          // Ajouter l'écouteur d'événements avant de charger
           newVideo.addEventListener("timeupdate", () => {
             if (newVideo.currentTime >= endTime) {
               newVideo.currentTime = startTime;
             }
           });
 
-          // Charger la vidéo
           newVideo.load();
           newVideo.currentTime = sceneData.defaultStartTime;
 
-          // Remplacer l'ancienne vidéo par la nouvelle
           videoRef.current = newVideo;
 
-          // Attendre que la vidéo soit prête puis la lire
           if (autoplayEnabled) {
             const playPromise = newVideo.play();
             if (playPromise !== undefined) {
@@ -186,14 +167,12 @@ export default function Home() {
                     `Video for scene ${sceneId} playing successfully`
                   );
 
-                  // Mettre à jour la texture vidéo
                   if (videoTextureRef.current) {
                     videoTextureRef.current.source = new THREE.VideoTexture(
                       newVideo
                     ).source;
                     videoTextureRef.current.needsUpdate = true;
                   } else {
-                    // Créer une nouvelle texture si nécessaire
                     const videoTexture = new THREE.VideoTexture(newVideo);
                     videoTexture.minFilter = THREE.LinearFilter;
                     videoTexture.magFilter = THREE.LinearFilter;
@@ -202,7 +181,6 @@ export default function Home() {
                       THREE.EquirectangularReflectionMapping;
                     videoTextureRef.current = videoTexture;
 
-                    // Mettre à jour le matériau de la sphère
                     if (
                       sphereRef.current &&
                       sphereRef.current.material instanceof
@@ -224,7 +202,6 @@ export default function Home() {
         });
     }
 
-    // Create a new scene and switch to it
     const newScene = new THREE.Scene();
     if (rendererRef.current && cameraRef.current) {
       switchScene(rendererRef.current, newScene, cameraRef.current);
@@ -233,7 +210,6 @@ export default function Home() {
     }
   };
 
-  // Modified to respect the autoplay setting
   useEffect(() => {
     if (activeSceneId === 1 && !isTransitioning && autoplayEnabled) {
       const transitionTimeout = setTimeout(() => {
@@ -383,7 +359,6 @@ export default function Home() {
       return `${mins}:${secs.toString().padStart(2, "0")}`;
     };
 
-    // Modified click handler to toggle video playback
     document.addEventListener("click", () => {
       if (video.paused) {
         video.currentTime = startTime;
@@ -391,7 +366,7 @@ export default function Home() {
           .play()
           .then(() => {
             console.log("Video playing");
-            setAutoplayEnabled(true); // Enable autoplay when user explicitly plays video
+            setAutoplayEnabled(true);
             if (videoTimeIntervalRef.current)
               clearInterval(videoTimeIntervalRef.current);
             videoTimeIntervalRef.current = window.setInterval(() => {
@@ -399,17 +374,11 @@ export default function Home() {
             }, 1000);
           })
           .catch((err) => console.error("Error playing video:", err));
-      } else {
-        // Optional: Allow pausing by clicking again
-        // video.pause();
-        // setAutoplayEnabled(false);
       }
     });
 
-    // Set initial video time without auto-playing
     video.currentTime = startTime;
 
-    // Only attempt to play if autoplay is enabled
     if (autoplayEnabled) {
       video
         .play()
@@ -418,7 +387,6 @@ export default function Home() {
         })
         .then(() => {
           if (video.played.length > 0) {
-            // Only set up interval if video actually played
             if (videoTimeIntervalRef.current)
               clearInterval(videoTimeIntervalRef.current);
             videoTimeIntervalRef.current = window.setInterval(() => {
@@ -427,7 +395,6 @@ export default function Home() {
           }
         });
     } else {
-      // Just display the first frame without playing
       console.log("Video autoplay disabled. Click to play.");
     }
 
@@ -492,7 +459,6 @@ export default function Home() {
     console.log(`Starting chapter ${currentChapterIndex}`);
     const currentChapter = history.chapters[currentChapterIndex];
 
-    // Update pillar images for the current chapter
     if (sceneRef.current && currentChapter.images) {
       updatePillarsImages(sceneRef.current, [
         currentChapter.images[0] || "/default-image1.jpg",
@@ -500,19 +466,15 @@ export default function Home() {
       ]);
     }
 
-    // Create a new audio element instead of reusing the same one
     if (audioRef.current) {
-      // Remove previous event listeners to prevent duplicates
       audioRef.current.onended = null;
       audioRef.current.pause();
       audioRef.current.src = "";
     }
 
-    // Create and configure the audio element
     const audio = new Audio();
     audio.src = currentChapter.mp3;
 
-    // Wait for audio to be loaded before playing
     audio.onloadeddata = () => {
       console.log(
         `Audio for chapter ${currentChapterIndex} loaded, playing now`
@@ -525,7 +487,6 @@ export default function Home() {
         .catch((err) => console.error("Error playing audio:", err));
     };
 
-    // Only set up the onended handler after the audio has started playing
     audio.oncanplaythrough = () => {
       audio.onended = () => {
         console.log(
@@ -543,10 +504,8 @@ export default function Home() {
       };
     };
 
-    // Save reference to the current audio element
     audioRef.current = audio;
 
-    // Clean up function
     return () => {
       if (audioRef.current) {
         audioRef.current.pause();
@@ -557,7 +516,6 @@ export default function Home() {
     };
   }, [currentChapterIndex, history, storySubmitted, activeSceneId]);
 
-  // Function to modify start and end points
   const updateVideoSegment = (start: number, end: number) => {
     setStartTime(start);
     setEndTime(end);
@@ -566,7 +524,6 @@ export default function Home() {
     }
   };
 
-  // Added play/pause controls for the UI
   const toggleVideoPlayback = () => {
     if (videoRef.current) {
       if (videoRef.current.paused) {
@@ -585,56 +542,165 @@ export default function Home() {
     <div style={{ position: "relative", width: "100%", height: "100vh" }}>
       {!storySubmitted ? (
         <div
+          className={`home-container ${transitioning ? "fadeOut" : "fadeIn"}`}
           style={{
             display: "flex",
             flexDirection: "column",
             justifyContent: "center",
             alignItems: "center",
             height: "100vh",
-            backgroundColor: "#f0f0f0",
+            backgroundImage:
+              "url('https://i.ibb.co/8nj2T13j/colosseum-amphitheatre-ancient-colosseum-amphitheatre-wallpaper-98364d8890109c4830bc01ce98b2847a.jpg')",
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            position: "relative",
+            overflow: "hidden",
           }}
         >
-          <h1 style={{ fontSize: "2.5rem", marginBottom: "20px" }}>
-            Quel histoire vous voulez connaitre ?
+          <div
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background:
+                "radial-gradient(circle, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.8) 100%)",
+              zIndex: 1,
+            }}
+          />
+          <h1
+            style={{
+              fontSize: "2.8rem",
+              marginBottom: "30px",
+              color: "#f7f1a7",
+              textShadow: "0 0 15px rgba(0,0,0,0.7)",
+              zIndex: 2,
+              position: "relative",
+              fontFamily: "'Merriweather', serif",
+              animation: "pulse 2s infinite alternate",
+            }}
+          >
+            Tell me a story ...
           </h1>
           <form
-            onSubmit={handleStorySubmit}
-            style={{ width: "100%", maxWidth: "600px" }}
+            onSubmit={handleStorySubmitEnhanced}
+            style={{
+              width: "100%",
+              maxWidth: "600px",
+              zIndex: 2,
+              position: "relative",
+              padding: "20px",
+              borderRadius: "12px",
+              background: "rgba(0, 0, 0, 0.5)",
+              backdropFilter: "blur(8px)",
+              boxShadow: "0 10px 30px rgba(0, 0, 0, 0.6)",
+            }}
           >
             <input
               type="text"
               placeholder="Entrez votre histoire ici..."
               value={storyPrompt}
               onChange={(e) => setStoryPrompt(e.target.value)}
+              list="suggestions"
               style={{
                 width: "100%",
-                padding: "15px",
+                padding: "18px",
                 fontSize: "1.2rem",
-                borderRadius: "8px",
-                border: "1px solid #ccc",
-                marginBottom: "20px",
+                borderRadius: "10px",
+                border: "2px solid #f7f1a7",
+                backgroundColor: "rgba(255, 255, 255, 0.9)",
+                transition: "transform 0.3s ease, box-shadow 0.3s ease",
+                outline: "none",
+                color: "#000", // force input text to be black
+              }}
+              onFocus={(e) => {
+                e.currentTarget.style.transform = "scale(1.02)";
+                e.currentTarget.style.boxShadow =
+                  "0 8px 20px rgba(0, 0, 0, 0.5)";
+              }}
+              onBlur={(e) => {
+                e.currentTarget.style.transform = "scale(1)";
+                e.currentTarget.style.boxShadow = "none";
               }}
               required
             />
+            <datalist id="suggestions">
+              <option value="Spartacus en révolte" />
+              <option value="Romulus et Remus" />
+              <option value="Legions invincibles" />
+              <option value="Gladiateurs en furie" />
+              <option value="Empereur conquérant" />
+            </datalist>
             <button
               type="submit"
               style={{
                 width: "100%",
-                padding: "15px",
+                padding: "18px",
                 fontSize: "1.2rem",
-                borderRadius: "8px",
+                borderRadius: "10px",
                 border: "none",
-                backgroundColor: "#007BFF",
-                color: "white",
+                marginTop: "20px",
+                background: "linear-gradient(135deg, #f7f1a7, #e0c97a)",
+                color: "#3c2a21",
                 cursor: "pointer",
+                transition: "transform 0.3s ease, box-shadow 0.3s ease",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = "scale(1.03)";
+                e.currentTarget.style.boxShadow =
+                  "0 8px 20px rgba(0, 0, 0, 0.5)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = "scale(1)";
+                e.currentTarget.style.boxShadow = "none";
               }}
             >
               Soumettre
             </button>
           </form>
+          <p
+            style={{
+              position: "absolute",
+              bottom: "20px",
+              color: "#f7f1a7",
+              fontSize: "0.95rem",
+              textAlign: "center",
+              zIndex: 2,
+              width: "100%",
+              maxWidth: "600px",
+              textShadow: "0 0 8px rgba(0,0,0,0.7)",
+            }}
+          >
+            Plongez dans un voyage immersif dans l'Empire romain dès votre première idée
+          </p>
+          <style
+            dangerouslySetInnerHTML={{
+              __html: `
+              @keyframes fadeIn {
+                from { opacity: 0; transform: translateY(20px); }
+                to { opacity: 1; transform: translateY(0); }
+              }
+              @keyframes fadeOut {
+                from { opacity: 1; transform: translateY(0); }
+                to { opacity: 0; transform: translateY(-20px); }
+              }
+              @keyframes pulse {
+                from { transform: scale(0.98); }
+                to { transform: scale(1.02); }
+              }
+              .fadeIn {
+                animation: fadeIn 0.8s forwards;
+              }
+              .fadeOut {
+                animation: fadeOut 0.8s forwards;
+              }
+            `,
+            }}
+          />
         </div>
       ) : (
-        <div ref={mountRef} style={{ width: "100%", height: "100%" }}></div>
+        <div ref={mountRef} style={{ width: "100%", height: "100%" }} className="fadeIn"></div>
       )}
       {storySubmitted &&
         activeSceneId === 3 &&
